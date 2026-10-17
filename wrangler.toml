@@ -1,0 +1,10 @@
+# 3D Browser: 静的ファイルだけを配信する Cloudflare Worker
+# デプロイは `node deploy.mjs` (公開するファイルを dist/ に集めてからアップロードする)
+name = "3d-browser"
+compatibility_date = "2026-10-01"
+routes = [
+  { pattern = "3dbrowser.cantic.org", custom_domain = true }
+]
+
+[assets]
+directory = "./dist"

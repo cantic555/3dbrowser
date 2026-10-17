@@ -7,6 +7,14 @@
 
 A web app that shows a thick, rotatable 3D browser inside your browser.
 
+![3D Browser](docs/screenshot-main.png)
+
+| ブラウザの中のブラウザの中の… (`about:this`) | 小人 (`about:kobito`) |
+|---|---|
+| ![入れ子](docs/screenshot-nested.png) | ![小人](docs/screenshot-kobito.png) |
+| **ちょっと怖い？ (`about:horror`)** | |
+| ![ホラー](docs/screenshot-horror.png) | |
+
 ## できること
 
 - 箱の形をしたブラウザを、ドラッグや画面下の操作パネルで回す・拡大縮小する

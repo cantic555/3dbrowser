@@ -1831,9 +1831,13 @@
   }
 
   // ---------- about:info ----------
-  const INFO_FOOTER = `
+  // 署名・ライセンス・ソースコード (GitHub はほかのサイトの中に表示できないので新しいタブで開く)
+  const REPO_URL = 'https://github.com/cantic555/3dbrowser';
+  const infoFooter = (sourceLabel) => `
         <footer>
-          MIT License ・ 2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
+          2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
+          ・ <a href="${REPO_URL}/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+          ・ <a href="${REPO_URL}" target="_blank" rel="noopener">${sourceLabel} (GitHub ↗)</a>
         </footer>`;
   const INFO_JA = `
       <article class="info">
@@ -1867,7 +1871,7 @@
             <li>iframe を使っているため、埋め込みを拒否している多くのサイト (Google、X など) は中に表示されません。</li>
             <li>中に表示されるサイトの内容は、それぞれのサイトのものです。</li>
           </ul>
-        </section>${INFO_FOOTER}
+        </section>${infoFooter('ソースコード')}
       </article>`;
   const INFO_EN = `
       <article class="info">
@@ -1901,7 +1905,7 @@
             <li>Because this uses iframes, many sites that refuse embedding (Google, X, etc.) won't show up inside.</li>
             <li>Content shown inside belongs to each site.</li>
           </ul>
-        </section>${INFO_FOOTER}
+        </section>${infoFooter('Source code')}
       </article>`;
   function renderInfo(tab) {
     setMeta(tab, t('infoTitle'), 'about:info');

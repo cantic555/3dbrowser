@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .wrangler/
+# スクリーンショット方式の試作 (公開リポジトリには含めない)
+snapshot/

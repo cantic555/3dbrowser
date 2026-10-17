@@ -317,6 +317,7 @@
     opacity: 0; transition: opacity .4s;
   }
   #padHint.show { opacity: 1; }
+  #pad[hidden] ~ #padHint { bottom: 60px; }  /* パネルを畳んでいるときは、その分下に出す */
   /* 幅の狭い画面 (スマホ) では、右下のボタンと重ならないよう少し上に置く */
   @media (max-width: 720px) {
     #pad { bottom: 52px; }
@@ -533,6 +534,7 @@
     hidePad: ['操作パネルを隠す', 'Hide the control pad'],
     showPad: ['操作パネルを表示', 'Show the control pad'],
     dragHint: ['枠や背景をドラッグしても回せます', 'You can also drag the frame or the background'],
+    dragHintFirst: ['枠や背景をドラッグすると回せます', 'Drag the frame or the background to rotate'],
     newTab: ['新しいタブ', 'New Tab'],
     closeTab: ['タブを閉じる', 'Close tab'],
     close: ['閉じる', 'Close'],
@@ -2503,10 +2505,10 @@
   addEventListener('blur', () => { held.clear(); syncKeys(); });
 
   // 隠す / 表示する (次回も覚えておく)。入れ子の中ではごちゃごちゃするので出さない
-  function showPad(on) {
+  function showPad(on, remember = true) {
     pad.hidden = !on;
     padShow.hidden = on;
-    store.set('3d-browser-pad-hidden', on ? '' : '1');
+    if (remember) store.set('3d-browser-pad-hidden', on ? '' : '1');
   }
   pad.querySelector('.pad-hide').addEventListener('click', () => showPad(false));
   padShow.addEventListener('click', () => showPad(true));
@@ -2515,8 +2517,36 @@
     pad.hidden = true;
     padShow.hidden = true;
   } else {
-    showPad(store.get('3d-browser-pad-hidden') !== '1');
-    if (!store.get('3d-browser-pad-used')) pad.classList.add('glow');
+    // 最初の表示: 指で操作する端末ではパネルを出す。マウスのある PC では畳んでおき、
+    // 代わりにヒントと軽い揺れで「ドラッグで回せる」ことを見せる。
+    // 一度でも表示/非表示を切り替えた人は、その設定を優先する
+    const saved = store.get('3d-browser-pad-hidden');
+    const mouse = matchMedia('(pointer: fine)').matches;
+    if (saved !== null) showPad(saved !== '1');
+    else showPad(!mouse, false);
+    if (!pad.hidden && !store.get('3d-browser-pad-used')) pad.classList.add('glow');
+    if (saved === null && mouse && !store.get('3d-browser-drag-hinted')) {
+      store.set('3d-browser-drag-hinted', '1');  // ヒントと揺れは最初の 1 回だけ
+      showDragHint();
+    }
+  }
+
+  // PC の初回だけ: 少し待ってから 3D ブラウザを軽く揺らし、ドラッグで回せることを知らせる
+  function showDragHint() {
+    padHint.textContent = t('dragHintFirst');
+    padHint.dataset.i18n = 'dragHintFirst';
+    setTimeout(() => {
+      if (dragging || padActive()) return;  // もう触っていたら何もしない
+      padHint.classList.add('show');
+      const r0 = rx, y0 = ry;
+      turnTo(r0 - 4, y0 + 18);
+      setTimeout(() => { if (!dragging && !padActive()) turnTo(r0, y0); }, 700);
+      setTimeout(() => {
+        padHint.classList.remove('show');
+        padHint.textContent = t('dragHint');
+        padHint.dataset.i18n = 'dragHint';
+      }, 4500);
+    }, 1200);
   }
   setLang(lang);
 

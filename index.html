@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- iPhone で「ホーム画面に追加」して開くと、アドレスバーなしの全画面で表示される -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>3D Browser</title>
 <style>
   :root {
@@ -29,7 +33,6 @@
   #scene {
     position: fixed; inset: 0;
     perspective: 2200px;
-    display: grid; place-items: center;
     touch-action: none;
     cursor: grab;
   }
@@ -37,8 +40,10 @@
   body.dragging iframe { pointer-events: none; }
   body.dragging { user-select: none; }
 
+  /* 画面の中央に置く (スマホのように画面が箱より狭くても中央になるよう、絶対位置で置く) */
   #box {
-    position: relative;
+    position: absolute; left: 50%; top: 50%;
+    margin: calc(var(--H) / -2) 0 0 calc(var(--W) / -2);
     width: var(--W); height: var(--H);
     transform-style: preserve-3d;
   }
@@ -183,13 +188,21 @@
   .viewport iframe { width: 100%; height: 100%; border: 0; display: block; }
   .page { position: absolute; inset: 0; overflow: auto; }
   .draw { display: block; width: 100%; height: 100%; background: #fff; touch-action: none; cursor: crosshair; }
-  .draw-clear {
+  .draw-clear, .draw-fly {
     position: absolute; right: 12px; bottom: 12px;
     width: 36px; height: 36px; padding: 0; border-radius: 50%;
     display: grid; place-items: center;
     border: 1px solid #dde0e6; background: #f7f8fa; color: #555; cursor: pointer;
   }
-  .draw-clear:hover { background: #eef1f8; border-color: #c9d3ee; }
+  .draw-fly { right: 56px; }
+  .draw-clear:hover, .draw-fly:hover { background: #eef1f8; border-color: #c9d3ee; }
+  /* 面から飛び立つ線 (箱の中に 3D で置く) */
+  .fly3d { position: absolute; pointer-events: none; }
+  /* 暗い背景に出ても見えるよう、白くふちどる */
+  .fly3d canvas {
+    display: block; width: 100%; height: 100%;
+    filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 6px rgba(255,255,255,.7));
+  }
 
   .notice {
     position: absolute; left: 0; right: 0; bottom: 0;
@@ -252,6 +265,64 @@
   #controls button:hover { background: rgba(255,255,255,.16); }
   body.see-through #seeThrough { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+  /* ---------- 操作パネル (スティックと拡大縮小) ---------- */
+  #pad {
+    position: fixed; left: 50%; bottom: 14px; z-index: 20; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    touch-action: none; user-select: none;
+  }
+  #pad[hidden] { display: none; }
+  .stick {
+    position: relative; width: 104px; height: 104px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,.06), rgba(255,255,255,.14));
+    border: 1px solid rgba(255,255,255,.28);
+    cursor: grab;
+  }
+  .stick.active { cursor: grabbing; }
+  /* 最初に気づいてもらうため、触るまでふわっと光らせる */
+  #pad.glow .stick { animation: pad-glow 1.6s ease-in-out infinite; }
+  @keyframes pad-glow {
+    50% { box-shadow: 0 0 0 6px rgba(59,108,246,.35), 0 0 18px rgba(59,108,246,.6); }
+  }
+  .stick .arrow {
+    position: absolute; color: rgba(255,255,255,.45); font-size: 10px; line-height: 1;
+    pointer-events: none;
+  }
+  .stick .a-up { left: 50%; top: 6px; transform: translateX(-50%); }
+  .stick .a-down { left: 50%; bottom: 6px; transform: translateX(-50%); }
+  .stick .a-left { top: 50%; left: 7px; transform: translateY(-50%); }
+  .stick .a-right { top: 50%; right: 7px; transform: translateY(-50%); }
+  .knob {
+    position: absolute; left: 50%; top: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px;
+    border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle at 35% 30%, #fff, #c9cdd6);
+    box-shadow: 0 3px 8px rgba(0,0,0,.45);
+  }
+  .stick:not(.active) .knob { transition: transform .18s ease-out; }  /* 離すと中心へ戻る */
+  .zoom-btns { display: flex; flex-direction: column; gap: 8px; }
+  #pad button {
+    width: 36px; height: 36px; padding: 0; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.3); background: rgba(32,35,42,.6);
+    color: rgba(255,255,255,.85); font-size: 18px; line-height: 1; cursor: pointer;
+  }
+  #pad button:hover { background: rgba(50,54,64,.85); }
+  #pad .pad-hide {
+    position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; font-size: 11px;
+  }
+  /* 使い始めに 1 回だけ出すヒント */
+  #padHint {
+    position: fixed; left: 50%; bottom: 132px; z-index: 21; transform: translateX(-50%);
+    padding: 6px 14px; border-radius: 999px; background: rgba(32,35,42,.85); color: #fff;
+    font-size: 13px; white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .4s;
+  }
+  #padHint.show { opacity: 1; }
+  /* 幅の狭い画面 (スマホ) では、右下のボタンと重ならないよう少し上に置く */
+  @media (max-width: 720px) {
+    #pad { bottom: 52px; }
+    #padHint { bottom: 170px; }
+  }
+
   /* ---------- about:horror ---------- */
   .horror { position: absolute; inset: 0; overflow: hidden; background: #0b0c0e; color: #ddd; }
   .h-room {
@@ -271,9 +342,17 @@
   .crawl-svg .arm { transform-box: fill-box; transform-origin: 50% 0; transition: transform .14s steps(2); }
   .crawl-svg.a .arm-r, .crawl-svg.b .arm-l { transform: translateY(-14px) scale(1.05); }
   .crawl-svg.no-l .arm-l, .crawl-svg.no-r .arm-r { opacity: 0; }
-  .crawl-svg .smile { opacity: 0; }
-  .crawl-svg.happy .eye { opacity: 0; }
-  .crawl-svg.happy .smile { opacity: 1; }
+  /* 普段は顔が髪で完全に隠れている。reveal で髪が左右に分かれて笑い顔が見える */
+  .crawl-svg .hair-up, .crawl-svg .face { opacity: 0; }
+  .crawl-svg.reveal .hair-down { opacity: 0; }
+  .crawl-svg.reveal .hair-up, .crawl-svg.reveal .face { opacity: 1; }
+  /* 顔をガッと上げる: 一瞬縮んでから跳ね上がる */
+  .crawl-svg.lift { animation: h-lift .5s cubic-bezier(.2, 1.6, .4, 1) forwards; transform-origin: 50% 100%; }
+  @keyframes h-lift {
+    0% { transform: none; }
+    25% { transform: translateY(4%) scaleY(.92); }
+    100% { transform: translateY(-9%) scaleY(1.04); }
+  }
   .crawl-svg.wave .arm-r { animation: h-wave .3s steps(2) infinite alternate; }
   @keyframes h-wave { to { transform: translateY(-40px) rotate(-25deg); } }
   .horror.flicker { animation: h-flicker .12s steps(2) 1; }
@@ -298,55 +377,45 @@
   #scene.shake { animation: h-shake .2s steps(2) 2; }
   @keyframes h-shake { 50% { translate: 6px -4px; } }
 
-  /* こちらへ迫ってくる大きな手 → 花 */
-  .horror-overlay {
-    position: fixed; inset: 0; z-index: 50; overflow: hidden; pointer-events: none;
-    background: radial-gradient(ellipse at 50% 60%, rgba(0,0,0,.25), rgba(0,0,0,.9));
-    opacity: 0; transition: opacity .35s;
+  /* 右手に咲く花 (箱の中に 3D で置く) */
+  .arm3d .offer-flower {
+    transform-box: view-box; transform-origin: 100px 150px;
+    scale: 0; rotate: -25deg;
+    transition: scale .45s cubic-bezier(.3, 1.7, .5, 1), rotate .45s cubic-bezier(.3, 1.7, .5, 1), opacity .4s;
   }
-  .horror-overlay.show { opacity: 1; }
-  .ho-hand {
-    position: absolute; left: 50%; bottom: -12vh; height: 70vh; aspect-ratio: 200 / 270;
-    transform-origin: 50% 100%; transform: translateX(-50%) scale(.45);
+  .arm3d.pop .offer-flower { scale: 1; rotate: 0deg; }
+  .arm3d.given .offer-flower { opacity: 0; }  /* 渡したので手元からは消える */
+  /* 花が出る瞬間に面の中が白く光る */
+  .h-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  .horror.pop .h-flash { animation: h-flash .45s ease-out; }
+  @keyframes h-flash { 15% { opacity: .85; } 100% { opacity: 0; } }
+  /* 笑い顔のまわりに浮かぶハート */
+  .h-hearts span {
+    position: absolute; left: 50%; top: 30%; color: #ff7aa8; font-size: 34px; opacity: 0;
+    pointer-events: none;
   }
-  .ho-hand svg { display: block; width: 100%; height: 100%; }
-  .ho-hand .fingers { transform-box: view-box; transform-origin: 50% 60%; }
-  .ho-hand.twitch .fingers { animation: h-twitch .16s steps(2) 6; }
-  @keyframes h-twitch { 50% { transform: rotate(3deg) scale(1.03); } }
-  .ho-hand.leave { transition: transform .8s ease-in; transform: translateX(-50%) scale(.2) !important; }
-  .ho-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
-  .pop .ho-flash { animation: h-flash .4s ease-out; }
-  @keyframes h-flash { 15% { opacity: .9; } 100% { opacity: 0; } }
-  .ho-flower {
-    position: absolute; left: 50%; top: 38vh; width: 18vh;
-    transform: translateX(-50%) scale(0) rotate(-25deg);
-    transition: transform .45s cubic-bezier(.3, 1.7, .5, 1);
-  }
-  .pop .ho-flower { transform: translateX(-50%) scale(1) rotate(0); }
-  /* 白い手や背景に重なっても読めるよう暗い下地を付ける */
-  .ho-msg {
-    position: absolute; left: 50%; bottom: 5vh; transform: translateX(-50%);
-    padding: .6vh 2.4vh; border-radius: 999px; background: rgba(20,20,24,.78);
-    color: #fff; font-size: 3vh; letter-spacing: .1em; white-space: nowrap;
-    opacity: 0; transition: opacity .5s .4s;
-  }
-  .pop .ho-msg { opacity: 1; }
-  .ho-hearts span {
-    position: absolute; left: 50%; top: 36vh; color: #ff7aa8; font-size: 4vh; opacity: 0;
-  }
-  .pop .ho-hearts span { animation: h-heart 1.8s ease-out forwards; }
-  .pop .ho-hearts span:nth-child(2) { animation-delay: .3s; margin-left: -10vh; }
-  .pop .ho-hearts span:nth-child(3) { animation-delay: .6s; margin-left: 9vh; }
+  .horror.pop .h-hearts span { animation: h-heart 1.8s ease-out forwards; }
+  .horror.pop .h-hearts span:nth-child(1) { animation-delay: .2s; margin-left: -150px; }
+  .horror.pop .h-hearts span:nth-child(2) { animation-delay: .45s; margin-left: 120px; }
+  .horror.pop .h-hearts span:nth-child(3) { animation-delay: .7s; margin-left: -20px; top: 18%; }
   @keyframes h-heart {
     0% { opacity: 0; transform: translateY(0) scale(.6); }
     20% { opacity: 1; }
-    100% { opacity: 0; transform: translateY(-22vh) scale(1.2); }
+    100% { opacity: 0; transform: translateY(-120px) scale(1.2); }
   }
   .souvenir {
     position: fixed; left: 16px; bottom: 10px; z-index: 20; width: 34px; padding: 0;
     border: 0; background: none; cursor: pointer;
   }
-  .souvenir svg { display: block; width: 100%; }
+  .souvenir svg { display: block; width: 100%; pointer-events: none; }
+  .souvenir { touch-action: none; }
+  .souvenir.dragging { pointer-events: none; z-index: 60; filter: drop-shadow(0 4px 6px rgba(0,0,0,.4)); }
+
+  /* ---------- about:kobito ---------- */
+  .kobito { position: absolute; inset: 0; }
+  .kobito canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .fall3d { position: absolute; pointer-events: none; }
+  .fall3d canvas { display: block; width: 100%; height: 100%; }
 
   /* ---------- about:info ---------- */
   /* パソコンのページ部分 (約 940×500px) に 1 画面で収まるよう 2 段組みにする */
@@ -368,6 +437,7 @@
   .info dt { font-weight: 600; }
   .info dd { margin: 0; color: #444; }
   .info a { color: var(--accent); }
+
   .info footer {
     margin-top: 16px; padding-top: 8px; border-top: 1px solid #e4e6eb;
     color: var(--muted); font-size: 12px;
@@ -388,15 +458,32 @@
   </div>
 </div>
 <div id="controls">
-  <button id="resetView" title="向きと大きさを正面に戻す">リセット</button>
-  <button id="seeThrough" title="面を半透明にして反対側を透かして見る">透過</button>
+  <button id="resetView" data-i18n="reset" data-i18n-title="resetTip">リセット</button>
+  <button id="seeThrough" data-i18n="seeThrough" data-i18n-title="seeThroughTip">透過</button>
+  <button id="fullscreen" data-i18n-title="fullscreenTip">全画面</button>
+  <button id="padShow" hidden>🎮</button>
+  <button id="langToggle"></button>
 </div>
+<!-- 操作パネル: スティックを倒した方向に回る (遠くまで倒すほど速い) -->
+<div id="pad" hidden>
+  <div class="stick" data-i18n-title="padTip">
+    <span class="arrow a-up">▲</span><span class="arrow a-down">▼</span>
+    <span class="arrow a-left">◀</span><span class="arrow a-right">▶</span>
+    <div class="knob"></div>
+  </div>
+  <div class="zoom-btns">
+    <button class="zoom-in" data-i18n-title="zoomIn">＋</button>
+    <button class="zoom-out" data-i18n-title="zoomOut">−</button>
+  </div>
+  <button class="pad-hide" data-i18n-title="hidePad">×</button>
+</div>
+<div id="padHint" data-i18n="dragHint"></div>
 
 <script>
 (() => {
   const W = 960, H = 600;
   const SIDE_W = 400;  // 側面ブラウザの短い辺の長さ。厚みに収まるよう縦横同じ倍率で縮めて表示する
-  const WIKI = 'https://ja.wikipedia.org';
+
 
   const $ = (id) => document.getElementById(id);
   const box = $('box'), scene = $('scene');
@@ -406,7 +493,7 @@
   const depth = Number(new URLSearchParams(location.search).get('depth')) || 0;
   function selfUrl(d) {
     const u = new URL(location.href);
-    u.search = `?depth=${d}`;
+    u.search = `?depth=${d}&lang=${lang}`;
     u.hash = '';
     return u.href;
   }
@@ -417,6 +504,100 @@
     } catch { return false; }
   }
 
+  // ---------- 言語 (日本語 / English) ----------
+  const LANG_KEY = '3d-browser-lang';
+  let lang = (() => {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (q === 'ja' || q === 'en') return q;  // 入れ子の中は外側と同じ言語
+    try {
+      const v = localStorage.getItem(LANG_KEY);
+      if (v === 'ja' || v === 'en') return v;
+    } catch {}
+    return /^ja\b/i.test(navigator.language) ? 'ja' : 'en';
+  })();
+
+  // 画面に出る文字。[日本語, English]。関数は引数を受け取って文字を作る
+  const STR = {
+    reset: ['リセット', 'Reset'],
+    resetTip: ['向きと大きさを正面に戻す', 'Reset the angle and size'],
+    seeThrough: ['透過', 'See-through'],
+    seeThroughTip: ['面を半透明にして反対側を透かして見る', 'Make the faces translucent to see the other side'],
+    fullscreen: ['全画面', 'Fullscreen'],
+    exitFullscreen: ['全画面を終了', 'Exit fullscreen'],
+    fullscreenTip: ['画面いっぱいに表示する', 'Fill the whole screen'],
+    langToggle: ['English', '日本語'],
+    langToggleTip: ['Switch to English', '日本語に切り替える'],
+    padTip: ['ドラッグで回転 (遠くまで倒すほど速い)', 'Drag to rotate (the farther, the faster)'],
+    zoomIn: ['拡大', 'Zoom in'],
+    zoomOut: ['縮小', 'Zoom out'],
+    hidePad: ['操作パネルを隠す', 'Hide the control pad'],
+    showPad: ['操作パネルを表示', 'Show the control pad'],
+    dragHint: ['枠や背景をドラッグしても回せます', 'You can also drag the frame or the background'],
+    newTab: ['新しいタブ', 'New Tab'],
+    closeTab: ['タブを閉じる', 'Close tab'],
+    close: ['閉じる', 'Close'],
+    back: ['戻る', 'Back'],
+    forward: ['進む', 'Forward'],
+    reload: ['再読み込み', 'Reload'],
+    home: ['ホーム', 'Home'],
+    addressPlaceholder: ['検索語または URL を入力', 'Search or enter a URL'],
+    startLead: ['検索語を入れると Wikipedia を検索、URL を入れるとそのサイトを表示します',
+      'Type a word to search Wikipedia, or a URL to open that site'],
+    chipTokyoTower: ['東京タワー', 'Tokyo Tower'],
+    chipKenon: ['ケノン脱毛', 'Ke-non'],
+    draw: ['お絵描き', 'Draw'],
+    horror: ['ホラー', 'Horror'],
+    kobito: ['小人', 'Tiny Folks'],
+    info: ['説明', 'About'],
+    clear: ['クリア', 'Clear'],
+    flyAway: ['線を飛ばす', 'Let the lines fly away'],
+    theEnd: ['おしまい', 'The End'],
+    again: ['もう一度', 'Again'],
+    souvenir: ['もらった花 (ドラッグで持っていける・クリックで片付ける)', 'A flower for you (drag it somewhere, or click to put away)'],
+    embedNotice: ['表示されない場合、このサイトは埋め込みを拒否しています。',
+      "If nothing shows up, this site doesn't allow embedding."],
+    openNewTab: ['新しいタブで開く ↗', 'Open in a new tab ↗'],
+    searchTitle: [(q) => `${q} - 検索`, (q) => `${q} - Search`],
+    searching: ['検索中…', 'Searching…'],
+    noResults: [(q) => `「${q}」に一致する記事は見つかりませんでした。`, (q) => `No articles matched "${q}".`],
+    resultsMeta: [(n) => `Wikipedia の検索結果 ・ ${n} 件`, (n) => `Wikipedia results · ${n}`],
+    searchFailed: [(e) => `検索に失敗しました: ${e}`, (e) => `Search failed: ${e}`],
+    infoTitle: ['3D Browser について', 'About 3D Browser'],
+    // 小人のセリフ
+    panicWords: [['わー', 'きゃー', 'ひぇ', 'おっとっと', 'わわわ'], ['Whoa!', 'Eek!', 'Yikes!', 'Oops!', 'Wah!']],
+    fallWords: [['うわー', 'あ〜れ〜', 'たすけて〜', 'ひゅ〜', 'うわぁぁぁ', 'おちる〜'],
+      ['Waaah!', 'Help me~', 'Nooo~', 'Wheee~', 'Aaaaah!', "I'm falling~"]],
+    bossLine: ['ハッハッハッ、小人がゴミのようだ', 'Ha ha ha! Look, the Tiny Folks are like trash!'],
+    imBack: ['ただいま', "I'm back"],
+    phew: ['ふぅ', 'Phew'],
+    gulp: ['ギクッ', 'Gulp!'],
+    snackFound: [['あっ！おかし持ってる！', 'ずるい！', 'じーっ'], ['Hey! A snack!', 'No fair!', '*stare*']],
+    letsShare: ['…みんなでたべよ', "…let's share"],
+    yay: ['わーい', 'Yay!'],
+    munch: ['もぐもぐ', 'Munch munch'],
+    flowerWow: ['わあ！', 'Wow!'],
+    flowerGot: ['わーい', 'Yay!'],
+    flowerEnvy: [['いいなー', 'きれい', 'おはなだ'], ['Lucky!', 'So pretty', 'A flower!']],
+    flowerPlant: ['うえよう', "Let's plant it"],
+    flowerWater: ['おみず〜', 'Watering~'],
+    pokeWords: [['ひゃっ', 'なに？', 'くすぐったい', '！', 'やめて〜', 'えへへ'],
+      ['Eep!', 'What?', 'That tickles', '!', 'Stop it~', 'Hehe']],
+    liftWords: [['わっ', 'はなして〜'], ['Whoa!', 'Put me down~']],
+  };
+  const t = (key, ...args) => {
+    const v = STR[key][lang === 'ja' ? 0 : 1];
+    return typeof v === 'function' ? v(...args) : v;
+  };
+  const pick = (key) => { const a = t(key); return a[Math.floor(Math.random() * a.length)]; };
+
+  // data-i18n (文字) / data-i18n-title (説明) / data-i18n-placeholder を今の言語にする
+  function applyLang(root = document) {
+    for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+    for (const el of root.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+    for (const el of root.querySelectorAll('[data-i18n-placeholder]')) el.placeholder = t(el.dataset.i18nPlaceholder);
+  }
+  const onLangChange = [];  // 言語を切り替えたときに呼ぶ処理
+  const wikiBase = () => `https://${lang}.wikipedia.org`;  // 言語に合わせた Wikipedia
   function isUrl(s) {
     return /^(https?|file):\/\//i.test(s) || /^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(s);
   }
@@ -431,12 +612,12 @@
     const tab = {
       browser: null,
       history: [null], index: 0,
-      title: '新しいタブ', addr: '',
+      title: t('newTab'), addr: '',
       label: document.createElement('div'),
       pane: document.createElement('div'),
     };
     tab.label.className = 'tab';
-    tab.label.innerHTML = '<span class="tab-title"></span><button class="close" title="タブを閉じる">✕</button>';
+    tab.label.innerHTML = `<span class="tab-title"></span><button class="close" data-i18n-title="closeTab" title="${t('closeTab')}">✕</button>`;
     tab.label.querySelector('.close').addEventListener('click', () => tab.browser.closeTab(tab));
     tab.label._tab = tab;
     tab.pane.className = 'viewport';
@@ -456,6 +637,7 @@
   // about:this はこのサイト自身 (入れ子になる)
   const INTERNAL = {
     'about:this': 'self', 'about:draw': 'draw', 'about:horror': 'horror', 'about:info': 'info',
+    'about:kobito': 'kobito',
   };
 
   function navigate(tab, input, push = true) {
@@ -480,23 +662,25 @@
     else if (entry.type === 'horror') renderHorror(tab);
     else if (entry.type === 'self') renderSelf(tab);
     else if (entry.type === 'info') renderInfo(tab);
+    else if (entry.type === 'kobito') renderKobito(tab);
     else if (entry.type === 'url') renderUrl(tab, entry.value);
     else renderSearch(tab, entry.value);
     tab.browser?.sync(tab);
   }
 
   function renderStart(tab) {
-    setMeta(tab, '新しいタブ', '');
+    setMeta(tab, t('newTab'), '');
     const page = document.createElement('div');
     page.className = 'page';
     page.innerHTML = `
       <div class="start">
         <h1>3D <span>Browser</span></h1>
-        <p>検索語を入れると Wikipedia を検索、URL を入れるとそのサイトを表示します</p>
+        <p>${t('startLead')}</p>
         <div class="chips">
-          ${[['東京タワー'], ['3D Browser', 'about:this'], ['ケノン脱毛', 'https://ケノン.com/'],
-             ['zoomquilt', 'https://zoomquilt.org/'], ['earthcam', 'https://www.earthcam.com/'],
-             ['お絵描き', 'about:draw'], ['ホラー', 'about:horror'], ['説明', 'about:info']]
+          ${[[t('chipTokyoTower')], ['3D Browser', 'about:this'], [t('chipKenon'), 'https://ケノン.com/'],
+             ['zoomquilt', 'https://zoomquilt.org/'],
+             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
+             [t('draw'), 'about:draw'], [t('horror'), 'about:horror'], [t('kobito'), 'about:kobito'], [t('info'), 'about:info']]
             .map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('')}
         </div>
       </div>`;
@@ -507,7 +691,7 @@
 
   // ドラッグで線を引くだけのお絵描き。右上のボタンで全部消す
   function renderDraw(tab) {
-    setMeta(tab, 'お絵描き', 'about:draw');
+    setMeta(tab, t('draw'), 'about:draw');
     const canvas = document.createElement('canvas');
     canvas.className = 'draw';
     tab.pane.appendChild(canvas);
@@ -515,15 +699,90 @@
 
     const clear = document.createElement('button');
     clear.className = 'draw-clear';
-    clear.title = 'クリア';
-    clear.setAttribute('aria-label', 'クリア');
+    clear.dataset.i18nTitle = 'clear';
+    clear.title = t('clear');
     // ゴミ箱アイコン
     clear.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
-    clear.addEventListener('click', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+    clear.addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      strokes.length = 0;
+    });
     tab.pane.appendChild(clear);
+
+    const fly = document.createElement('button');
+    fly.className = 'draw-fly';
+    fly.dataset.i18nTitle = 'flyAway';
+    fly.title = t('flyAway');
+    // 蝶アイコン
+    fly.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+      stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 8v11M12 8l-2-4M12 8l2-4"/>
+      <path d="M12 10C9 5 3 4 3 8.5c0 3 3.5 4.5 9 3.5M12 10c3-5 9-6 9-1.5 0 3-3.5 4.5-9 3.5"/>
+      <path d="M12 13c-3.5.5-6.5 2.5-5.5 5 1 2 3.5.5 5.5-3M12 13c3.5.5 6.5 2.5 5.5 5-1 2-3.5.5-5.5-3"/></svg>`;
+    fly.addEventListener('click', () => flyAway());
+    tab.pane.appendChild(fly);
+
     const R = 2;  // 拡大しても線が粗くならないよう、表示の 2 倍の解像度で描く
+    const LW = 4;  // 線の太さ
+    const strokes = [];  // 描いた線 (点の配列) を 1 本ずつ覚えておく
+
+    // 描いた線を 1 本ずつ蝶のように面から 3D 空間へ飛び立たせ、キャンバスからは消す
+    function flyAway() {
+      const face = tab.browser?.face;
+      if (!strokes.length || !face) return;
+      const { x: ox, y: oy, s } = offsetInFace(canvas, face);
+
+      strokes.forEach((pts, i) => {
+        const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+        const minX = Math.min(...xs) - LW, minY = Math.min(...ys) - LW;
+        const w = Math.max(...xs) + LW - minX, h = Math.max(...ys) + LW - minY;
+        // その線だけを描いた小さなキャンバスを作る
+        const c = document.createElement('canvas');
+        c.width = w * R; c.height = h * R;
+        const g = c.getContext('2d');
+        g.strokeStyle = '#222';
+        g.lineWidth = LW * R;
+        g.lineCap = g.lineJoin = 'round';
+        g.beginPath();
+        pts.forEach(([x, y], k) => g[k ? 'lineTo' : 'moveTo']((x - minX) * R, (y - minY) * R));
+        if (pts.length === 1) g.lineTo((pts[0][0] - minX) * R + 0.1, (pts[0][1] - minY) * R);
+        g.stroke();
+
+        const el = document.createElement('div');
+        el.className = 'fly3d';
+        el.style.width = `${w * s}px`;
+        el.style.height = `${h * s}px`;
+        el.appendChild(c);
+        face.parentElement.appendChild(el);
+        flutter(el, c, face, (ox + minX + w / 2) * s, (oy + minY + h / 2) * s, Math.min(i, 20) * 140);
+      });
+      strokes.length = 0;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ふらふらと上へ、手前へ羽ばたいていき、最後に消える
+    function flutter(el, wing, face, x, y, delay) {
+      const t0 = performance.now() + delay;
+      const dur = 3200 + Math.random() * 1400;
+      const phase = Math.random() * Math.PI * 2;
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const hz = 3 + Math.random() * 2;  // 羽ばたきの速さ
+      (function frame(now) {
+        const p = Math.max(0, (now - t0) / dur);
+        if (p >= 1 || !face.isConnected) return el.remove();
+        const e = 1 - (1 - p) ** 2;  // だんだん遠くへ
+        const dx = side * 160 * p + Math.sin(p * 9 + phase) * 60;
+        const dy = -380 * e + Math.sin(p * 13 + phase) * 25;
+        const rot = Math.sin(p * 7 + phase) * 18;
+        place3d(el, face, x, y, 700 * e, `translate(${dx}px, ${dy}px) rotate(${rot}deg)`);
+        const t = Math.max(0, now - t0) / 1000;
+        wing.style.transform = p > 0 ? `scaleX(${0.3 + 0.7 * Math.abs(Math.cos(t * Math.PI * hz))})` : '';
+        el.style.opacity = p > 0.75 ? 1 - (p - 0.75) / 0.25 : 1;
+        requestAnimationFrame(frame);
+      })(performance.now());
+    }
 
     // 表示サイズに合わせてキャンバスを作り直す (描いた内容は左上基準で残す)
     function fit() {
@@ -548,12 +807,14 @@
       ctx.lineTo(x * R, y * R);
       ctx.stroke();
       last = [x, y];
+      strokes[strokes.length - 1].push(last);
     }
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       fit();
       canvas.setPointerCapture(e.pointerId);
       last = [e.offsetX, e.offsetY];
+      strokes.push([last]);
       line(e.offsetX, e.offsetY);  // クリックだけでも点が打てる
     });
     canvas.addEventListener('pointermove', (e) => { if (last) line(e.offsetX, e.offsetY); });
@@ -582,18 +843,40 @@
           <ellipse cx="242" cy="205" rx="4" ry="7"/><ellipse cx="250" cy="203" rx="4" ry="7"/>
           <ellipse cx="238" cy="193" rx="18" ry="10"/></g>
       </g>
-      <path d="M100 72 Q100 22 150 22 Q200 22 200 72 Q214 122 222 196 Q208 206 196 194 Q186 208 174 195
-               Q162 209 150 196 Q138 209 126 195 Q114 208 104 194 Q92 206 78 196 Q86 122 100 72 Z" fill="#131313"/>
-      <g stroke="#2b2b2b" stroke-width="2" fill="none">
-        <path d="M122 40 Q112 120 104 190"/><path d="M150 30 Q150 120 150 194"/><path d="M178 40 Q188 120 196 190"/>
+      <!-- 垂れた髪で顔は完全に隠れている (目も見せない) -->
+      <g class="hair-down">
+        <path d="M100 72 Q100 22 150 22 Q200 22 200 72 Q214 122 222 196 Q208 206 196 194 Q186 208 174 195
+                 Q162 209 150 196 Q138 209 126 195 Q114 208 104 194 Q92 206 78 196 Q86 122 100 72 Z" fill="#131313"/>
+        <g stroke="#2b2b2b" stroke-width="2" fill="none">
+          <path d="M122 40 Q112 120 104 190"/><path d="M150 30 Q150 120 150 194"/><path d="M178 40 Q188 120 196 190"/>
+        </g>
       </g>
-      <g class="eye"><ellipse cx="166" cy="96" rx="9" ry="6" fill="#f2efe6"/><circle cx="167" cy="96" r="3" fill="#111"/></g>
-      <g class="smile">
-        <path d="M158 98 Q166 89 174 98" stroke="#f2efe6" stroke-width="3" fill="none" stroke-linecap="round"/>
-        <ellipse cx="146" cy="110" rx="7" ry="4" fill="#f3a3b5" opacity=".85"/>
-        <ellipse cx="184" cy="110" rx="7" ry="4" fill="#f3a3b5" opacity=".85"/>
+      <!-- 顔を上げると髪が分かれて、不気味かわいい笑い顔が見える
+           (青白い顔、目の下のくま、細めた目、口角の上がった細い笑み、顔にかかる髪) -->
+      <g class="face">
+        <ellipse cx="150" cy="74" rx="37" ry="34" fill="#e9e6e1"/>
+        <g fill="#b8b2c4" opacity=".55">
+          <ellipse cx="135" cy="76" rx="9" ry="3.5"/><ellipse cx="165" cy="76" rx="9" ry="3.5"/>
+        </g>
+        <g stroke="#222" stroke-width="3" fill="none" stroke-linecap="round">
+          <path d="M126 70 Q135 64 144 71"/><path d="M156 71 Q165 64 174 70"/>
+        </g>
+        <ellipse cx="124" cy="85" rx="6" ry="3" fill="#e9a3b2" opacity=".6"/>
+        <ellipse cx="176" cy="85" rx="6" ry="3" fill="#e9a3b2" opacity=".6"/>
+        <path d="M133 86 Q150 99 167 86" stroke="#8a3a4c" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M164 86.5 L168 84" stroke="#8a3a4c" stroke-width="2" stroke-linecap="round"/>
+      </g>
+      <g class="hair-up" fill="#131313">
+        <path d="M108 64 Q108 22 150 22 Q192 22 192 64 Q172 44 150 48 Q128 44 108 64 Z"/>
+        <path d="M110 54 Q94 110 98 190 Q88 200 78 194 Q84 120 104 58 Z"/>
+        <path d="M190 54 Q206 110 202 190 Q212 200 222 194 Q216 120 196 58 Z"/>
+        <!-- 顔にかかったままの髪の毛 -->
+        <g stroke="#131313" stroke-width="2.2" fill="none" stroke-linecap="round">
+          <path d="M140 48 Q132 74 128 106"/><path d="M146 47 Q143 70 141 92"/><path d="M172 50 Q178 78 176 104"/>
+        </g>
       </g>
     </svg>`;
+
 
   // 指を広げてこちらに伸ばしてくる手 (指先が上)
   const HAND_SVG = `
@@ -628,21 +911,38 @@
       <circle cx="30" cy="37" r="7" fill="#ffd54f"/>
     </svg>`;
 
+  // 花を差し出す手 (軽く握った手で茎を持ち、こちらに向ける)
+  const OFFER_SVG = `
+    <svg viewBox="0 0 200 270" aria-hidden="true">
+      <g class="offer-flower" transform="translate(70 32)">
+        ${FLOWER_SVG.replace(/^\s*<svg[^>]*>|<\/svg>\s*$/g, '')}
+      </g>
+      <g ${SKIN}>
+        <rect x="74" y="190" width="54" height="85" rx="22"/>
+        <rect x="64" y="140" width="72" height="62" rx="26"/>
+      </g>
+      <g stroke="#b9b5ab" stroke-width="2" fill="none" stroke-linecap="round">
+        <path d="M80 160 Q104 154 130 160"/><path d="M80 174 Q104 168 130 174"/><path d="M82 188 Q104 182 128 188"/>
+      </g>
+      <ellipse cx="92" cy="146" rx="11" ry="19" transform="rotate(-35 92 146)" ${SKIN}/>
+    </svg>`;
+
   const STOP = Symbol('stop');
-  let horrorBusy = false;  // 画面いっぱいの演出は同時に 1 つだけ
 
   function renderHorror(tab) {
-    setMeta(tab, 'ホラー', 'about:horror');
+    setMeta(tab, t('horror'), 'about:horror');
     const page = document.createElement('div');
     page.className = 'horror';
     page.innerHTML = `
       <div class="h-room"></div>
       <canvas class="h-noise" width="160" height="100"></canvas>
       <div class="h-ghost">${CRAWL_SVG}</div>
+      <div class="h-hearts"><span>♥</span><span>♥</span><span>♥</span></div>
+      <div class="h-flash"></div>
       <div class="h-end" hidden>
         <div class="h-end-flower">${FLOWER_SVG}</div>
-        <p>おしまい</p>
-        <button class="h-replay">もう一度</button>
+        <p data-i18n="theEnd">${t('theEnd')}</p>
+        <button class="h-replay" data-i18n="again">${t('again')}</button>
       </div>`;
     page.querySelector('.h-replay').addEventListener('click', () => render(tab));
     tab.pane.appendChild(page);
@@ -667,7 +967,20 @@
 
   // 面の上の点 (面の左上からの座標 x, y) に要素を置き、面から z だけ手前に出す。
   // 面と同じ変形を使うため、変形の中心を面の中心にそろえる
-  function place3d(el, face, x, y, z) {
+  // ページ内の要素の左上が面のどこにあるか。側面では中身を縮めて表示しているので、
+  // その倍率 s も返す (面の中の座標 = (x + 要素内の座標) * s)
+  function offsetInFace(el, face) {
+    let x = 0, y = 0;
+    for (let e = el; e && e !== face && !e.classList.contains('squash'); e = e.offsetParent) {
+      x += e.offsetLeft;
+      y += e.offsetTop;
+    }
+    const squash = face.querySelector(':scope > .squash');
+    return { x, y, s: squash ? face.offsetWidth / squash.offsetWidth : 1 };
+  }
+
+  // extra には面の中での追加の変形 (横移動や回転など) を渡せる
+  function place3d(el, face, x, y, z, extra = '') {
     const left = face.offsetLeft + x - el.offsetWidth / 2;
     const top = face.offsetTop + y - el.offsetHeight / 2;
     const m = getComputedStyle(face).transform;
@@ -675,7 +988,7 @@
     el.style.top = `${top}px`;
     el.style.transformOrigin =
       `${face.offsetLeft + face.offsetWidth / 2 - left}px ${face.offsetTop + face.offsetHeight / 2 - top}px`;
-    el.style.transform = `${m === 'none' ? '' : m} translateZ(${z}px)`;
+    el.style.transform = `${m === 'none' ? '' : m} translateZ(${z}px) ${extra}`;
   }
 
   async function playHorror(tab, page) {
@@ -707,7 +1020,6 @@
       ghost.style.bottom = `${40 - t * 48}%`;
       ghost.style.transform = `translateX(-50%) scale(${0.14 + t * 2.06}) rotate(${jitter}deg)`;
     };
-    let ownsOverlay = false;
 
     try {
       // 1. 砂嵐とちらつき
@@ -744,60 +1056,42 @@
       shake();
       await step(900);
 
-      // 4. 右手 (画面の左) が面から 3D 空間へ伸びてくる
+      // 4. 右手 (画面の左) がプルプル震えながら、画面の中から少しだけ出てくる。
+      //    ためらうように、少し出ては止まり、また少し出る
       svg.classList.add('no-r');
       const arm = add3d('arm3d', HAND_SVG);
-      for (let i = 0; i <= 5; i++) {
-        place3d(arm, face, fw * 0.32, fh * 0.7, 20 + i * 100);
-        arm.firstElementChild.style.transform = `rotate(${i % 2 ? -7 : 7}deg)`;
-        await step(190);
+      const ax = fw * 0.32, ay = fh * 0.66;
+      let z = 0;
+      const jitter = () => `translate(${(Math.random() - 0.5) * 5}px, ${(Math.random() - 0.5) * 5}px) rotate(${(Math.random() - 0.5) * 5}deg)`;
+      for (const [to, ms] of [[35, 600], [35, 450], [70, 550], [70, 500], [95, 500], [95, 600]]) {
+        const from = z, n = Math.round(ms / 40);
+        for (let i = 1; i <= n; i++) {
+          z = from + (to - from) * i / n;
+          place3d(arm, face, ax, ay, z, jitter());
+          await step(40);
+        }
       }
 
-      // 5. 大きな手が画面いっぱいに迫る → 6. パッと花が出る
-      if (!horrorBusy) {
-        horrorBusy = ownsOverlay = true;
-        const ov = document.createElement('div');
-        ov.className = 'horror-overlay';
-        ov.innerHTML = `
-          <div class="ho-hand">${HAND_SVG}</div>
-          <div class="ho-flash"></div>
-          <div class="ho-flower">${FLOWER_SVG}</div>
-          <div class="ho-hearts"><span>♥</span><span>♥</span><span>♥</span></div>
-          <div class="ho-msg">いつも見てくれてありがとう</div>`;
-        document.body.appendChild(ov);
-        temps.push(ov);
-        arm.style.opacity = 0;
-        const hand = ov.querySelector('.ho-hand');
-        await step(30);
-        ov.classList.add('show');
-        for (let i = 0; i < 6; i++) {
-          hand.style.transform = `translateX(-50%) scale(${0.45 + i * 0.21}) rotate(${i % 2 ? -4 : 4}deg)`;
-          await step(250);
-        }
-        hand.classList.add('twitch');  // つかもうとして指がぴくぴく
-        await step(1000);
-        hand.classList.remove('twitch');
-        ov.classList.add('pop');
-        svg.classList.add('happy');
-        await step(2800);
-        // 7. 手を引っ込めて帰っていく
-        hand.classList.add('leave');
-        ov.classList.remove('show');
-        await step(800);
-        ov.remove();
-        horrorBusy = ownsOverlay = false;
-        arm.style.opacity = 1;
-        souvenir();
-      } else {
-        svg.classList.add('happy');
-      }
-      for (let i = 5; i >= 0; i--) {
-        place3d(arm, face, fw * 0.32, fh * 0.7, 20 + i * 100);
-        await step(130);
+      // 5. ぱっ！ 手が花を差し出す形に変わって花が咲き、同時に顔をガッと上げて笑い顔を見せる
+      arm.innerHTML = OFFER_SVG;
+      place3d(arm, face, ax, ay, z, 'rotate(-6deg)');
+      void arm.offsetWidth;
+      arm.classList.add('pop');
+      page.classList.add('pop');  // 面の中の光とハート
+      svg.classList.add('reveal', 'lift');
+      shake();
+      await step(2800);
+
+      // 6. 手を引っ込める。花はお土産として受け取る
+      souvenir();
+      arm.classList.add('given');
+      for (let i = 1; i <= 8; i++) {
+        place3d(arm, face, ax, ay, z * (1 - i / 8));
+        await step(45);
       }
       arm.remove();
       grip.remove();
-      svg.classList.remove('no-l', 'no-r');
+      svg.classList.remove('no-l', 'no-r', 'lift');
 
       // にっこりして右手を振り、後ずさりして消える
       svg.classList.add('wave');
@@ -818,7 +1112,6 @@
       removeEventListener('keydown', onKey);
       for (const el of temps) el.remove();
       scene.classList.remove('shake');
-      if (ownsOverlay) horrorBusy = false;
     }
     // 終わり (Esc で飛ばしたときもここ)
     if (page.parentNode !== tab.pane) return;
@@ -834,22 +1127,719 @@
     if (document.querySelector('.souvenir')) return;
     const s = document.createElement('button');
     s.className = 'souvenir';
-    s.title = 'もらった花 (クリックで片付ける)';
+    s.dataset.i18nTitle = 'souvenir';
+    s.title = t('souvenir');
     s.innerHTML = FLOWER_SVG;
-    s.addEventListener('click', () => s.remove());
     document.body.appendChild(s);
+    // ドラッグで運べる。小人のページに落とすとあげられる。動かさずに離したら片付ける
+    let drag = null;
+    s.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      // 指の下の要素で pointerup を受けたいので、タッチの自動キャプチャを外す
+      s.releasePointerCapture?.(e.pointerId);
+      drag = { x: e.clientX, y: e.clientY, moved: false };
+    });
+    const move = (e) => {
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+      drag.moved = true;
+      s.classList.add('dragging');
+      s.style.left = `${e.clientX - 17}px`;
+      s.style.top = `${e.clientY - 34}px`;
+      s.style.bottom = 'auto';
+    };
+    const up = (e) => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      if (!moved) { cleanup(); s.remove(); return; }
+      // 小人のキャンバスの上で離したら、その場所 (キャンバス内の座標) にあげる
+      const kobito = e.target?.closest?.('.kobito');
+      if (kobito?._giveFlower && e.target.tagName === 'CANVAS') {
+        kobito._giveFlower(e.offsetX, e.offsetY);
+        cleanup();
+        s.remove();
+        return;
+      }
+      s.classList.remove('dragging');  // それ以外は左下に戻す
+      s.style.left = s.style.top = s.style.bottom = '';
+    };
+    const cleanup = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up, true);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up, true);
+  }
+
+  // ---------- about:kobito ----------
+  // ブラウザの中で小人が暮らしている放置鑑賞ページ。
+  // 3D ブラウザの向きからこの面の中での重力の向きを求め、傾けると小人があたふたする
+  const KOBITO_SHIRTS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#9575cd', '#fff176', '#a1887f'];
+  const KOBITO_HAIR = ['#3e2723', '#212121', '#795548', '#5d4037', '#424242', '#8d6e63'];
+  const KOBITO_COUNT = 10;
+  const KR0 = 12, KS = 1.8;  // 小人の元の大きさ (中心から足まで) と表示倍率
+  const KR = KR0 * KS;      // 当たり判定に使う大きさ
+  const GRAVITY = 900;  // px/s²
+  const FALL_TIME = 4;  // 画面から落ちて消えるまでの秒数
+
+  // 面の中での重力の向き。x, y は面の中 (y が面の下向き)、z は面に垂直な成分
+  function faceGravity(face) {
+    const m = new DOMMatrix(`rotateX(${rx}deg) rotateY(${ry}deg)`)
+      .multiply(new DOMMatrix(getComputedStyle(face).transform));
+    // 画面の下向き (0, 1, 0) を面の座標に戻す。w = 0 なので平行移動は無視される
+    const g = m.inverse().transformPoint(new DOMPoint(0, 1, 0, 0));
+    return { x: g.x, y: g.y, z: g.z };
+  }
+
+  // 面が見ている人の側を向いているか (裏から見ているときは負になる)
+  function faceFacing(face) {
+    const m = new DOMMatrix(`rotateX(${rx}deg) rotateY(${ry}deg)`)
+      .multiply(new DOMMatrix(getComputedStyle(face).transform));
+    return m.transformPoint(new DOMPoint(0, 0, 1, 0)).z;
+  }
+
+  function renderKobito(tab) {
+    setMeta(tab, t('kobito'), 'about:kobito');
+    const page = document.createElement('div');
+    page.className = 'kobito';
+    const canvas = document.createElement('canvas');
+    page.appendChild(canvas);
+    tab.pane.appendChild(page);
+    // 描く先。画面から落ちていく小人を別のキャンバスに描くときだけ一時的に差し替える
+    const mainCtx = canvas.getContext('2d');
+    let ctx = mainCtx;
+    const R = 2;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+
+    let W = 0, H = 0;
+    const people = [];
+    const fallers = [];   // 画面から落ちていく途中の小人
+    let away = 0, comeback = 0;  // 落ちていなくなった人数と、次に戻ってくるまでの時間
+    let prevG = null, shake = 0, last = performance.now();
+    let boss = null;  // みんなが落ちていくのを見て高笑いする 1 人 (いれば眼鏡の小人)
+    let glassesAway = false;  // 眼鏡の小人が落ちていなくなっているか
+    // ---------- 隠し機能: お菓子を隠し持っている小人 ----------
+    // 表からは体に隠れて見えないが、透過モードで裏から見るとばれる
+    let fromBack = false;      // 透過モードで面を裏から見ているか
+    let snackT = 0;            // 裏から見続けている時間 (ばれる演出の進み具合)
+    let snackAgain = 0;        // 次にお菓子を隠し持つまでの時間
+
+    function makePerson(i, x, y) {
+      return {
+        x, y, vx: 0, vy: 0,
+        shirt: KOBITO_SHIRTS[i % KOBITO_SHIRTS.length],
+        hair: KOBITO_HAIR[Math.floor(Math.random() * KOBITO_HAIR.length)],
+        state: 'idle', timer: rnd(0.5, 3), dir: Math.random() < 0.5 ? -1 : 1,
+        heading: rnd(0, Math.PI * 2), ang: 0, spin: 0, step: rnd(0, 6),
+        bubble: '', bubbleT: 0, grounded: false, glasses: false,
+      };
+    }
+
+    function spawn() {
+      for (let i = 0; i < KOBITO_COUNT; i++) people.push(makePerson(i, rnd(KR * 2, W - KR * 2), H - KR));
+      people[0].glasses = true;  // 1 人だけ眼鏡 (ボス)
+      people[1].snack = true;    // 1 人だけお菓子を隠し持っている
+    }
+
+    // 面が下を向いたら、小人は画面から飛び出して落ちていく (箱の中に 3D で置く)
+    const FW = 80, FH = 110, FCX = 40, FCY = 70;  // 落ちる小人を描く小さなキャンバスと、その中の小人の位置
+    function startFall(p, face, g) {
+      people.splice(people.indexOf(p), 1);
+      away++;
+      if (p.glasses) glassesAway = true;
+      const el = document.createElement('div');
+      el.className = 'fall3d';
+      const c = document.createElement('canvas');
+      c.width = FW * R; c.height = FH * R;
+      el.appendChild(c);
+      face.parentElement.appendChild(el);
+      const off = offsetInFace(canvas, face);
+      el.style.width = `${FW * off.s}px`;
+      el.style.height = `${FH * off.s}px`;
+      // 半分くらいは叫びながら落ちていく (残りは無言)
+      if (Math.random() < 0.6) say(p, pick('fallWords'), FALL_TIME);
+      else p.bubbleT = 0;
+      p.state = 'panic';
+      fallers.push({
+        el, g2d: c.getContext('2d'), p, face, g, t: 0, spin: 0, spinV: rnd(-3, 3),
+        // 面の中での位置 (キャンバスの中心がずれる分を補正)
+        x: (off.x + p.x) * off.s, y: (off.y + p.y - (FCY - FH / 2)) * off.s, s: off.s,
+        dx: rnd(-40, 40), dy: rnd(-40, 40),
+      });
+    }
+
+    function updateFallers(dt) {
+      for (const f of [...fallers]) {
+        f.t += dt;
+        if (f.t > FALL_TIME || !f.face.isConnected) {
+          f.el.remove();
+          fallers.splice(fallers.indexOf(f), 1);
+          continue;
+        }
+        // 真下 (重力の向き) へ、ゆっくりだんだん速く落ちていく。
+        // 重力は面の座標で表してあるので、面の中の成分と面から出る成分に分けて動かす
+        const d = 80 * f.t + 20 * f.t * f.t;
+        f.spin += f.spinV * dt;
+        place3d(f.el, f.face,
+          f.x + f.dx * f.t + f.g.x * d, f.y + f.dy * f.t + f.g.y * d, f.g.z * d, `rotate(${f.spin}rad)`);
+        f.el.style.opacity = f.t > FALL_TIME - 1 ? FALL_TIME - f.t : 1;  // 最後の 1 秒で消える
+        // 手足をばたばたさせる
+        const saved = ctx;
+        ctx = f.g2d;
+        ctx.setTransform(R, 0, 0, R, 0, 0);
+        ctx.clearRect(0, 0, FW, FH);
+        f.p.bubbleT -= dt;
+        drawPerson({ ...f.p, x: FCX, y: FCY, ang: 0 }, false);
+        ctx = saved;
+      }
+    }
+
+    // 面が下を向いていなければ、いなくなった小人が 1 人ずつ戻ってくる
+    function comeBack(dt, upright, g) {
+      if (!away || (comeback -= dt) > 0) return;
+      comeback = 0.8;
+      away--;
+      let x = rnd(KR * 2, W - KR * 2), y = rnd(KR * 2, H - KR * 2);
+      if (upright) {  // 空の側 (地面の反対) から降ってくる
+        if (Math.abs(g.y) >= Math.abs(g.x)) y = g.y > 0 ? KR : H - KR;
+        else { x = g.x > 0 ? KR : W - KR; y = rnd(KR * 2, H - KR * 2); }
+      }
+      const p = makePerson(Math.floor(Math.random() * KOBITO_SHIRTS.length), x, y);
+      if (glassesAway) { p.glasses = true; glassesAway = false; }
+      say(p, t('imBack'), 1.5);
+      people.push(p);
+    }
+
+    function say(p, text, t = 1.2) { p.bubble = text; p.bubbleT = t; }
+
+    // 落ち着いているときの暮らし。次の行動をランダムに選ぶ
+    function nextActivity(p) {
+      const friend = people.find((q) => q !== p && q.state !== 'panic' &&
+        Math.hypot(q.x - p.x, q.y - p.y) < KR * 4);
+      const r = Math.random();
+      const near = planted.find((f) => Math.abs(f.x * W - p.x) < KR * 2.5 && p.y > H - KR * 2);
+      if (near && Math.random() < 0.35) {
+        p.state = 'water'; p.timer = rnd(2, 3);
+        p.dir = Math.sign(near.x * W - p.x) || 1;
+        say(p, t('flowerWater'), 1.5);
+        return;
+      }
+      if (friend && r < 0.3) {
+        p.state = 'talk'; p.timer = rnd(2, 4);
+        p.dir = Math.sign(friend.x - p.x) || 1;
+        say(p, Math.random() < 0.5 ? '…' : '♪', p.timer);
+      } else if (r < 0.6) {
+        p.state = 'walk'; p.timer = rnd(2, 5);
+        if (Math.random() < 0.4) p.dir *= -1;
+        p.heading += rnd(-1, 1);
+      } else if (r < 0.78) {
+        p.state = 'sit'; p.timer = rnd(3, 6);
+      } else if (r < 0.88) {
+        p.state = 'sleep'; p.timer = rnd(5, 10);
+      } else if (r < 0.95) {
+        p.state = 'wave'; p.timer = 1.5;
+      } else {
+        p.state = 'idle'; p.timer = rnd(1, 3);
+      }
+    }
+
+    function step(dt) {
+      const face = tab.browser?.face;
+      if (!face) return;
+      const g = faceGravity(face);
+      const m = Math.hypot(g.x, g.y);       // 面の中での重力の強さ (0 = 面が水平)
+      const upright = m > 0.35;             // 地面がある (面が立っている)
+      const gx = g.x / (m || 1), gy = g.y / (m || 1);
+      // 重力の向きの変化の速さ = 揺さぶられ具合
+      if (prevG) shake = shake * 0.85 + Math.hypot(g.x - prevG.x, g.y - prevG.y) / dt * 0.15;
+      prevG = g;
+      const targetAng = upright ? Math.atan2(-gx, gy) : 0;  // 頭を重力と逆向きにする角度
+
+      // 面が下を向いたら (重力が面の外向き)、ばらばらに画面から落ちていく
+      if (g.z > 0.75) {
+        // たくさん落ちるときは、1 人だけ踏みとどまって高笑いする
+        if (!boss && people.length >= 5) {
+          boss = people.find((q) => q.glasses) || people[Math.floor(Math.random() * people.length)];
+          boss.state = 'idle'; boss.timer = 99;
+          say(boss, t('bossLine'), 4);
+        }
+        for (const p of [...people]) if (p !== boss && p !== held?.p && Math.random() < dt * 4) startFall(p, face, g);
+      } else if (g.z < 0.3) {
+        if (boss) { boss.timer = 0; boss = null; }
+        comeBack(dt, upright, g);
+      }
+      updateFallers(dt);
+      updateSnack(dt, face);
+      updateFlowers(dt, g, upright);
+
+      for (const p of people) {
+        p.bubbleT -= dt;
+        p.timer -= dt;
+        if (p.state === 'held') {  // つままれている間はぶら下がっているだけ
+          const d = ((targetAng - p.ang) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+          p.ang += d * Math.min(1, dt * 6);
+          continue;
+        }
+        if (upright) {
+          p.vx += g.x * GRAVITY * dt;
+          p.vy += g.y * GRAVITY * dt;
+        }
+        // 歩く
+        const calm = p.state !== 'panic' && p.state !== 'dizzy';
+        if (calm && p.state === 'walk') {
+          if (upright && p.grounded) {
+            // 地面に沿って歩く
+            const tx = gy * p.dir, ty = -gx * p.dir;  // dir = +1 で体の右 (顔を向けている側) へ
+            const sp = p.flowerRun ? 60 : 28;  // 花に向かうときは急いで
+            p.vx += (tx * sp - p.vx) * Math.min(1, dt * 6) * Math.abs(tx);
+            p.vy += (ty * sp - p.vy) * Math.min(1, dt * 6) * Math.abs(ty);
+          } else if (!upright) {
+            // 上から見た形: どの向きにも歩ける
+            p.heading += rnd(-1.5, 1.5) * dt;
+            p.vx = Math.cos(p.heading) * 24;
+            p.vy = Math.sin(p.heading) * 24;
+          }
+          p.step += dt * 10;
+        } else if (!upright) {
+          p.vx *= 1 - Math.min(1, dt * 6);
+          p.vy *= 1 - Math.min(1, dt * 6);
+        }
+
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        // 壁 (画面の端) との当たり判定
+        const contacts = [];
+        if (p.x < KR) { p.x = KR; if (p.vx < 0) p.vx *= -0.25; contacts.push([1, 0]); }
+        if (p.x > W - KR) { p.x = W - KR; if (p.vx > 0) p.vx *= -0.25; contacts.push([-1, 0]); }
+        if (p.y < KR) { p.y = KR; if (p.vy < 0) p.vy *= -0.25; contacts.push([0, 1]); }
+        if (p.y > H - KR) { p.y = H - KR; if (p.vy > 0) p.vy *= -0.25; contacts.push([0, -1]); }
+        if (!upright && contacts.length) {
+          p.heading = Math.atan2(p.vy, p.vx) + Math.PI + rnd(-0.5, 0.5);
+        }
+        // 足元が地面 (重力の向きにある壁) か
+        p.grounded = upright && contacts.some(([nx, ny]) => -(nx * gx + ny * gy) > 0.55);
+        if (p.grounded) {
+          // 地面の摩擦で踏ん張る。坂がきついと踏ん張りきれずにずるずる滑る。
+          // 転がっている間も少しずつ止まる (摩擦がないと、仲間に押し返されたまま永遠に回り続ける)
+          const grip = p.state === 'panic' ? 1.5 : p.state === 'walk' ? 2 : 10;
+          p.vx *= 1 - Math.min(1, dt * grip);
+          p.vy *= 1 - Math.min(1, dt * grip);
+        }
+        // 壁に当たったら引き返す
+        if (p.state === 'walk' && upright && contacts.some(([nx, ny]) => Math.abs(nx * gx + ny * gy) < 0.45)) {
+          p.dir *= -1;
+        }
+
+        // あたふた判定: 落ちている、滑っている、揺さぶられている
+        const speed = Math.hypot(p.vx, p.vy);
+        p.hopT = Math.max(0, (p.hopT || 0) - dt);
+        if (p.hopT > 0) {
+          // つっつかれて跳ねているだけ
+        } else if (p === boss) {
+          // 高笑いしている間は動じない
+          p.vx = p.vy = 0;
+        } else if (upright && (!p.grounded && speed > 80 || speed > 140 || shake > 3) &&
+                   !(p.state === 'panic' && p.panicT > 4)) {  // 念のため、4 秒以上はあたふたし続けない
+          if (p.state !== 'panic') {
+            say(p, pick('panicWords'), 1.4);
+            p.panicT = 0;
+          }
+          p.state = 'panic';
+          p.panicT += dt;
+          p.timer = rnd(0.8, 1.4);
+          p.spin += (speed / 40 + shake) * dt * (p.dir || 1);
+        } else if (p.state === 'panic' && p.timer <= 0) {
+          // 落ち着いたら目を回してから起き上がる
+          p.state = 'dizzy'; p.timer = rnd(1, 2);
+          say(p, Math.random() < 0.5 ? '@_@' : t('phew'), p.timer);
+        } else if (p.state === 'dizzy' && p.timer <= 0) {
+          p.spin = 0;
+          nextActivity(p);
+        } else if (calm && p.timer <= 0) {
+          nextActivity(p);
+        }
+
+        // 小人同士は重ならないよう押し合う (団子状に積み重なる)
+        for (const q of people) {
+          if (q === p) continue;
+          const dx = p.x - q.x, dy = p.y - q.y, d = Math.hypot(dx, dy) || 0.01;
+          const min = KR * 1.3;
+          if (d < min) {
+            const nx = dx / d, ny = dy / d, push = (min - d) / 2;
+            p.x += nx * push; p.y += ny * push;
+            q.x -= nx * push; q.y -= ny * push;
+            // ぶつかり合う向きの速さは打ち消す (押し返されても速さが残らないように)
+            const rel = (p.vx - q.vx) * nx + (p.vy - q.vy) * ny;
+            if (rel < 0) {
+              p.vx -= nx * rel / 2; p.vy -= ny * rel / 2;
+              q.vx += nx * rel / 2; q.vy += ny * rel / 2;
+            }
+          }
+        }
+
+        // 体の向き: 転がっている間は回し、それ以外はゆっくり起き上がる
+        if (p.state === 'panic') {
+          p.ang += p.spin;
+          p.spin *= 0.9;
+        } else {
+          const d = ((targetAng - p.ang) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+          p.ang += d * Math.min(1, dt * 6);
+        }
+      }
+    }
+
+    function updateSnack(dt, face) {
+      fromBack = document.body.classList.contains('see-through') && faceFacing(face) < -0.2;
+      let sneak = people.find((q) => q.snack);
+      if (!sneak) {
+        // しばらくしたら、また誰かがこっそりお菓子を持つ
+        if ((snackAgain -= dt) <= 0 && people.length > 1) {
+          const q = people.filter((r) => !r.glasses);
+          (q[Math.floor(Math.random() * q.length)] || people[0]).snack = true;
+        }
+        return;
+      }
+      if (!fromBack) { snackT = 0; return; }
+      const prev = snackT;
+      snackT += dt;
+      const at = (t) => prev < t && snackT >= t;  // ちょうど t 秒たったとき
+      const near = () => people.filter((q) => q !== sneak).sort((a, b) =>
+        Math.hypot(a.x - sneak.x, a.y - sneak.y) - Math.hypot(b.x - sneak.x, b.y - sneak.y)).slice(0, 3);
+      if (at(0.8)) {
+        // 寝ていたら飛び起きる (寝ている間は吹き出しが zzz になってしまうため)
+        if (sneak.state !== 'panic' && sneak.state !== 'held') { sneak.state = 'idle'; sneak.timer = 6; }
+        say(sneak, t('gulp'), 1.4);
+      }
+      if (at(1.8)) near().forEach((q, i) => say(q, t('snackFound')[i], 2));
+      if (at(4)) say(sneak, t('letsShare'), 1.8);
+      if (at(6)) {
+        sneak.snack = false;
+        near().forEach((q) => say(q, t('yay'), 1.5));
+        say(sneak, t('munch'), 1.5);
+        snackAgain = 20;
+      }
+    }
+
+    // お菓子 (クッキー)。手で背中に回して持っている
+    function drawSnack(by) {
+      ctx.fillStyle = '#c98a4b';
+      ctx.beginPath(); ctx.arc(0, 6 + by, 3.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5a3a1e';
+      for (const [x, y] of [[-1.2, 5], [1.3, 6.4], [-0.4, 7.6]]) {
+        ctx.beginPath(); ctx.arc(x, y + by, 0.55, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    function drawPerson(p, upright) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.ang);
+      ctx.scale(KS, KS);  // 以下は元の大きさ (KR0) の座標で描く
+      const sit = p.state === 'sit';
+      const sleep = p.state === 'sleep';
+      if (sleep) ctx.rotate(Math.PI / 2 * (p.dir || 1));
+      // 影
+      if (upright && p.grounded && !sleep) {
+        ctx.fillStyle = 'rgba(0,0,0,.15)';
+        ctx.beginPath(); ctx.ellipse(0, KR0, 8, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      const bob = p.state === 'walk' ? Math.abs(Math.sin(p.step)) * -1.5 : 0;
+      const by = (sit ? 3 : 0) + bob;
+      // 足
+      ctx.fillStyle = '#5d4037';
+      const swing = p.state === 'walk' ? Math.sin(p.step) * 3 : 0;
+      if (sit) {
+        ctx.beginPath(); ctx.ellipse(-4 * p.dir + 7 * p.dir, KR0 - 2, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.ellipse(-3 + swing, KR0 - 1.5, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(3 - swing, KR0 - 1.5, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // 体 (お菓子は表からは体の後ろに隠れる。裏から見ると体より手前に見える)
+      const snack = p.snack && ctx === mainCtx;
+      if (snack && !fromBack) drawSnack(by);
+      ctx.fillStyle = p.shirt;
+      ctx.beginPath(); ctx.ellipse(0, 4 + by, 6.5, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+      if (snack && fromBack) drawSnack(by);
+      // 腕 (あたふた中はばんざい、手を振る)
+      ctx.strokeStyle = '#f5d0b0'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      const t = performance.now() / 1000;
+      if (p.state === 'panic' || p.state === 'held') {
+        const f = Math.sin(t * 20) * 2;
+        ctx.beginPath(); ctx.moveTo(-5, 1 + by); ctx.lineTo(-10, -6 + f + by); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(5, 1 + by); ctx.lineTo(10, -6 - f + by); ctx.stroke();
+      } else if (p.state === 'wave') {
+        const f = Math.sin(t * 10) * 3;
+        ctx.beginPath(); ctx.moveTo(5, 1 + by); ctx.lineTo(10 + f, -6 + by); ctx.stroke();
+      }
+      // 頭
+      ctx.fillStyle = '#f9dcc4';
+      ctx.beginPath(); ctx.arc(0, -5 + by, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.hair;
+      ctx.beginPath(); ctx.arc(0, -6.5 + by, 7.2, Math.PI * 1.02, Math.PI * 1.98); ctx.fill();
+      // 顔
+      ctx.fillStyle = '#333'; ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+      const ex = (p.state === 'walk' || p.state === 'talk') ? p.dir * 1.5 : 0;
+      if (sleep || p.state === 'sit' && Math.sin(t + p.step) > 0.8) {
+        ctx.beginPath(); ctx.moveTo(-3.5 + ex, -4 + by); ctx.lineTo(-1.5 + ex, -4 + by);
+        ctx.moveTo(1.5 + ex, -4 + by); ctx.lineTo(3.5 + ex, -4 + by); ctx.stroke();
+      } else if (p.state === 'dizzy') {
+        ctx.font = '5px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('@', -2.5, -4 + by); ctx.fillText('@', 2.5, -4 + by);
+      } else {
+        ctx.beginPath(); ctx.arc(-2.5 + ex, -4 + by, 1, 0, Math.PI * 2); ctx.arc(2.5 + ex, -4 + by, 1, 0, Math.PI * 2); ctx.fill();
+        if (p.state === 'panic') {  // 口を開けて汗
+          ctx.beginPath(); ctx.ellipse(ex, -0.5 + by, 1.3, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#7ec8f0';
+          ctx.beginPath(); ctx.ellipse(7, -9 + by, 1.5, 2.2, 0.4, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // 眼鏡
+      if (p.glasses) {
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.arc(-2.6 + ex, -4 + by, 2.1, 0, Math.PI * 2);
+        ctx.moveTo(4.7 + ex, -4 + by); ctx.arc(2.6 + ex, -4 + by, 2.1, 0, Math.PI * 2);
+        ctx.moveTo(-0.5 + ex, -4 + by); ctx.lineTo(0.5 + ex, -4 + by);
+        ctx.stroke();
+      }
+      // もらった花を頭の上に掲げる
+      if (p.carry && ctx === mainCtx) drawFlower(6, -11 + by, 0.9, 0.25);
+      // 水やり (じょうろの代わりに水滴)
+      if (p.state === 'water') {
+        ctx.fillStyle = '#7ec8f0';
+        const tt = performance.now() / 300;
+        for (let i = 0; i < 3; i++) {
+          const k = (tt + i / 3) % 1;
+          ctx.beginPath(); ctx.ellipse(9 + k * 3, -2 + k * 12, 0.9, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // 吹き出し (zzz は寝ている間ずっと)
+      const text = sleep ? 'zzz' : p.bubbleT > 0 ? p.bubble : '';
+      if (text) {
+        if (sleep) ctx.rotate(-Math.PI / 2 * (p.dir || 1));
+        ctx.font = '7px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const w = ctx.measureText(text).width + 6;
+        // 画面の端で吹き出しが切れないよう、横にずらす (小人がおおむね立っているときだけ)
+        let sx = 0;
+        const c = Math.cos(p.ang), canvasW = ctx === mainCtx ? W : 0;  // 落ちていく小人は対象外
+        if (!sleep && Math.abs(c) > 0.5 && canvasW) {
+          const half = w / 2 * KS, room = 4;
+          const left = p.x - half * Math.abs(c), right = p.x + half * Math.abs(c);
+          if (left < room) sx = (room - left) / KS / c;
+          else if (right > canvasW - room) sx = (canvasW - room - right) / KS / c;
+        }
+        ctx.fillStyle = 'rgba(255,255,255,.9)';
+        ctx.strokeStyle = '#d5d8dd'; ctx.lineWidth = 0.6;  // 白い背景でも吹き出しの形が見えるように
+        ctx.beginPath(); ctx.roundRect(sx - w / 2, -24, w, 10, 5); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#333';
+        // 裏から透かして見ていると文字が左右反転するので、反転して描いて読めるようにする
+        if (fromBack && ctx === mainCtx) { ctx.save(); ctx.translate(sx, 0); ctx.scale(-1, 1); ctx.fillText(text, 0, -19); ctx.restore(); }
+        else ctx.fillText(text, sx, -19);
+      }
+      ctx.restore();
+    }
+
+    function draw() {
+      const face = tab.browser?.face;
+      const g = face ? faceGravity(face) : { x: 0, y: 1 };
+      const m = Math.hypot(g.x, g.y), upright = m > 0.35;
+      // 背景は真っ白なだけ
+      ctx.setTransform(R, 0, 0, R, 0, 0);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+      for (const f of planted) drawFlower(f.x * W, H, KS * 1.9);  // 小人より少し背が高く、頭の上から花がのぞく
+      if (looseFlower) drawFlower(looseFlower.x, looseFlower.y + 8, KS * 1.1);
+      for (const p of people) drawPerson(p, upright);
+    }
+
+    // ---------- つっつく・つまんで運ぶ ----------
+    // クリックでつっつく。ドラッグでつまみ上げて運び、離すと落ちる
+    let held = null;  // { p, x, y, moved, vx, vy, t }
+    // offsetX/Y は 3D 変形や縮小を戻したキャンバス内の座標なので、傾けたままでもつまめる
+    const hit = (x, y) => {
+      let best = null, bd = KR * 1.4;
+      for (const p of people) {
+        const d = Math.hypot(p.x - x, p.y - KR * 0.3 - y);
+        if (d < bd) { best = p; bd = d; }
+      }
+      return best;
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const p = hit(e.offsetX, e.offsetY);
+      if (!p) return;
+      canvas.setPointerCapture(e.pointerId);
+      held = { p, x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, moved: false, vx: 0, vy: 0, t: performance.now() };
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!held) {
+        canvas.style.cursor = hit(e.offsetX, e.offsetY) ? 'grab' : '';
+        return;
+      }
+      const { p } = held;
+      if (!held.moved && Math.hypot(e.offsetX - held.sx, e.offsetY - held.sy) < 5) return;
+      if (!held.moved) {
+        held.moved = true;
+        if (p === boss) boss = null;
+        p.state = 'held';
+        p.grounded = false;
+        say(p, pick('liftWords'), 1.5);
+        canvas.style.cursor = 'grabbing';
+      }
+      // 指先で頭をつまんでいる位置に小人を置く
+      const now = performance.now(), dt = Math.max(1, now - held.t) / 1000;
+      held.vx = held.vx * 0.5 + (e.offsetX - held.x) / dt * 0.5;
+      held.vy = held.vy * 0.5 + (e.offsetY - held.y) / dt * 0.5;
+      held.x = e.offsetX; held.y = e.offsetY; held.t = now;
+      p.x = Math.min(W - KR, Math.max(KR, e.offsetX));
+      p.y = Math.min(H - KR, Math.max(KR, e.offsetY + KR * 0.9));
+    });
+    const release = () => {
+      if (!held) return;
+      const { p, moved } = held;
+      if (!moved) {
+        // つっつく: ぴょんと跳ねる
+        say(p, pick('pokeWords'), 1.4);
+        const g = prevG || { x: 0, y: 1 }, m = Math.hypot(g.x, g.y) || 1;
+        p.vx -= g.x / m * 220; p.vy -= g.y / m * 220;
+        p.state = 'wave'; p.timer = 1.2;
+        p.hopT = 0.8;  // 跳ねている間はあたふたしない
+      } else {
+        // 離すと落ちる (投げた勢いも少し残す)
+        p.vx = Math.max(-600, Math.min(600, held.vx * 0.6));
+        p.vy = Math.max(-600, Math.min(600, held.vy * 0.6));
+        p.state = 'panic'; p.timer = 0.6; p.panicT = 0;
+      }
+      held = null;
+      canvas.style.cursor = '';
+    };
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+
+    // ---------- もらった花 ----------
+    // 落とした花は地面に落ち、小人が集まって 1 人が拾い、しばらく掲げてから植える。
+    // 植えた花は保存して、次に開いたときも咲いている
+    const PLANT_KEY = '3d-browser-kobito-flowers';
+    let looseFlower = null;   // 落ちてくる途中・地面に落ちている花 { x, y, vx, vy }
+    let planted = [];         // 植えた花 { x } (x は幅に対する割合。地面は画面の下)
+    try { planted = JSON.parse(localStorage.getItem(PLANT_KEY) || '[]'); } catch {}
+    const savePlanted = () => { try { localStorage.setItem(PLANT_KEY, JSON.stringify(planted)); } catch {} };
+
+    // 地面に沿って、p から見て (x, y) がどちら側か (+1 = 体の右)
+    const sideOf = (p, x, y) => { const g = prevG || { x: 0, y: 1 }; return Math.sign((x - p.x) * g.y - (y - p.y) * g.x) || 1; };
+
+    page._giveFlower = (x, y) => {
+      looseFlower = { x: Math.min(W - 10, Math.max(10, x)), y, vx: 0, vy: 0 };
+      for (const p of people) {
+        if (p.state === 'held' || p === boss) continue;
+        say(p, t('flowerWow'), 1.2);
+        p.state = 'walk'; p.timer = 4; p.flowerRun = true;
+        p.dir = sideOf(p, looseFlower.x, looseFlower.y);
+      }
+    };
+
+    function updateFlowers(dt, g, upright) {
+      // 落ちている花: 重力で地面 (面の中の重力の向きの端) まで落ちる
+      if (looseFlower) {
+        const f = looseFlower;
+        if (upright) { f.vx += g.x * GRAVITY * dt; f.vy += g.y * GRAVITY * dt; }
+        f.x += f.vx * dt; f.y += f.vy * dt;
+        if (f.x < 8) { f.x = 8; f.vx = 0; }
+        if (f.x > W - 8) { f.x = W - 8; f.vx = 0; }
+        if (f.y < 8) { f.y = 8; f.vy = 0; }
+        if (f.y > H - 8) { f.y = H - 8; f.vy = 0; }
+        // 一番近くまで来た子が拾う
+        const taker = people.find((p) => p.state !== 'held' && p.state !== 'panic' &&
+          Math.hypot(p.x - f.x, p.y - f.y) < KR * 1.3);
+        if (taker) {
+          looseFlower = null;
+          taker.carry = rnd(3, 5);
+          taker.state = 'wave'; taker.timer = 1.5;
+          say(taker, t('flowerGot'), 1.5);
+          for (const q of people) {
+            if (q === taker) continue;
+            q.flowerRun = false;
+            if (Math.hypot(q.x - taker.x, q.y - taker.y) < KR * 6 && Math.random() < 0.6) say(q, pick('flowerEnvy'), 1.6);
+          }
+        } else {
+          // 集まってくる子は花の方を向いて歩き続ける
+          for (const p of people) {
+            if (p.flowerRun && p.state === 'walk') { p.dir = sideOf(p, f.x, f.y); p.timer = Math.max(p.timer, 1); }
+          }
+        }
+      }
+      // 掲げている花は、しばらくしたら足元に植える (地面が画面の下のときだけ)
+      for (const p of people) {
+        if (!p.carry) continue;
+        p.carry -= dt;
+        if (p.carry <= 0) {
+          p.carry = 0;
+          if (upright && Math.abs(g.y) > Math.abs(g.x) && g.y > 0) {
+            planted.push({ x: p.x / W });
+            savePlanted();
+            say(p, t('flowerPlant'), 1.4);
+          } else {
+            looseFlower = { x: p.x, y: p.y, vx: 0, vy: 0 };  // 植えられないときは置く
+          }
+        }
+      }
+    }
+
+    // 小さな花の絵 (根元 x, y、大きさ s)
+    function drawFlower(x, y, s, ang = 0) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.scale(s, s);
+      ctx.strokeStyle = '#3a8f3a'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(-1, -6, 0, -12); ctx.stroke();
+      ctx.fillStyle = '#4caf50';
+      ctx.beginPath(); ctx.ellipse(-2.5, -5, 2.5, 1.2, -0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff7aa8';
+      for (let i = 0; i < 5; i++) {
+        const a = i / 5 * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath(); ctx.arc(Math.cos(a) * 3, -14 + Math.sin(a) * 3, 2.6, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#ffd54f';
+      ctx.beginPath(); ctx.arc(0, -14, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    let spawned = false;
+    (function frame(now) {
+      if (page.parentNode !== tab.pane) {  // 別のページへ移ったら止める
+        for (const f of fallers) f.el.remove();
+        return;
+      }
+      requestAnimationFrame(frame);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (tab.pane.hidden || !canvas.clientWidth) return;  // 裏のタブでは止めておく
+      // 表示サイズに合わせる
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      if (w !== W || h !== H) {
+        W = w; H = h;
+        canvas.width = W * R; canvas.height = H * R;
+        if (!spawned) { spawn(); spawned = true; }
+      }
+      step(dt);
+      draw();
+    })(performance.now());
   }
 
   // ---------- about:info ----------
-  function renderInfo(tab) {
-    setMeta(tab, '3D Browser について', 'about:info');
-    const page = document.createElement('div');
-    page.className = 'page';
-    page.innerHTML = `
+  const INFO_FOOTER = `
+        <footer>
+          MIT License ・ 2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
+        </footer>`;
+  const INFO_JA = `
       <article class="info">
         <header>
           <h1>3D <span>Browser</span> について</h1>
-          <p>ネットで一部話題になってた、超縦長のケノン脱毛のサイトからひらめいて作りました。</p>
+          <p>やたら縦に長いケノン脱毛(未購入)のサイトからひらめいて作りました。</p>
         </header>
         <section>
           <h2>操作方法</h2>
@@ -869,6 +1859,7 @@
             <dt><a href="#" data-q="about:this">about:this</a></dt><dd>この 3D Browser 自身 (ブラウザの中のブラウザの中の…)</dd>
             <dt><a href="#" data-q="about:draw">about:draw</a></dt><dd>お絵描き</dd>
             <dt><a href="#" data-q="about:horror">about:horror</a></dt><dd>ちょっと怖い? (Esc でスキップ)</dd>
+            <dt><a href="#" data-q="about:kobito">about:kobito</a></dt><dd>小人が暮らしている。回すとあたふたする</dd>
             <dt><a href="#" data-q="about:info">about:info</a></dt><dd>このページ</dd>
           </dl>
           <h2>注意</h2>
@@ -876,11 +1867,47 @@
             <li>iframe を使っているため、埋め込みを拒否している多くのサイト (Google、X など) は中に表示されません。</li>
             <li>中に表示されるサイトの内容は、それぞれのサイトのものです。</li>
           </ul>
-        </section>
-        <footer>
-          MIT License ・ 2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
-        </footer>
+        </section>${INFO_FOOTER}
       </article>`;
+  const INFO_EN = `
+      <article class="info">
+        <header>
+          <h1>About 3D <span>Browser</span></h1>
+          <p>Inspired by the ridiculously long web page of the Ke-non hair removal device (which I have not bought).</p>
+        </header>
+        <section>
+          <h2>How to use</h2>
+          <dl>
+            <dt>Rotate</dt><dd>Drag the browser frame (e.g. an empty part of the tab bar) or the background</dd>
+            <dt>Zoom</dt><dd>Mouse wheel outside the page, or Ctrl + wheel</dd>
+            <dt>Reset</dt><dd>"Reset" at the bottom right, or double-click the background</dd>
+            <dt>Open a face</dt><dd>Click a closed face (side or back) to make it a browser</dd>
+            <dt>Close a face</dt><dd>The red dot at the top left</dd>
+            <dt>Tabs</dt><dd>Add with "+". Drag a tab to move it to another face</dd>
+            <dt>See-through</dt><dd>"See-through" at the bottom right lets you see the faces behind</dd>
+          </dl>
+        </section>
+        <section>
+          <h2>Pages you can open</h2>
+          <dl>
+            <dt><a href="#" data-q="about:this">about:this</a></dt><dd>This 3D Browser itself (a browser in a browser in a…)</dd>
+            <dt><a href="#" data-q="about:draw">about:draw</a></dt><dd>Drawing</dd>
+            <dt><a href="#" data-q="about:horror">about:horror</a></dt><dd>A little scary? (Esc to skip)</dd>
+            <dt><a href="#" data-q="about:kobito">about:kobito</a></dt><dd>Tiny Folks live here. Rotate the browser and watch them panic</dd>
+            <dt><a href="#" data-q="about:info">about:info</a></dt><dd>This page</dd>
+          </dl>
+          <h2>Notes</h2>
+          <ul>
+            <li>Because this uses iframes, many sites that refuse embedding (Google, X, etc.) won't show up inside.</li>
+            <li>Content shown inside belongs to each site.</li>
+          </ul>
+        </section>${INFO_FOOTER}
+      </article>`;
+  function renderInfo(tab) {
+    setMeta(tab, t('infoTitle'), 'about:info');
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = lang === 'ja' ? INFO_JA : INFO_EN;
     // about: のリンクはこのタブの中で開く
     page.querySelectorAll('a[data-q]').forEach((a) => a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -912,18 +1939,18 @@
     // 埋め込み拒否 (X-Frame-Options / CSP) はブラウザから検知できないため常に案内を出す
     const notice = document.createElement('div');
     notice.className = 'notice';
-    notice.innerHTML = `<span>表示されない場合、このサイトは埋め込みを拒否しています。</span>
-      <a href="${url}" target="_blank" rel="noopener">新しいタブで開く ↗</a>
-      <button title="閉じる">✕</button>`;
+    notice.innerHTML = `<span data-i18n="embedNotice">${t('embedNotice')}</span>
+      <a href="${url}" target="_blank" rel="noopener" data-i18n="openNewTab">${t('openNewTab')}</a>
+      <button data-i18n-title="close" title="${t('close')}">✕</button>`;
     notice.querySelector('button').addEventListener('click', () => notice.remove());
     tab.pane.appendChild(notice);
   }
 
   async function renderSearch(tab, s) {
-    setMeta(tab, `${s} - 検索`, s);
+    setMeta(tab, t('searchTitle', s), s);
     const page = document.createElement('div');
     page.className = 'page';
-    page.innerHTML = '<div class="msg">検索中…</div>';
+    page.innerHTML = `<div class="msg">${t('searching')}</div>`;
     tab.pane.appendChild(page);
 
     const params = new URLSearchParams({
@@ -933,19 +1960,19 @@
       exintro: '1', explaintext: '1', exsentences: '3', exlimit: 'max',
     });
     try {
-      const res = await fetch(`${WIKI}/w/api.php?${params}`);
+      const res = await fetch(`${wikiBase()}/w/api.php?${params}`);
       const data = await res.json();
       if (page.parentNode !== tab.pane) return;  // 結果が届く前に別のページへ移った
       const pages = Object.values(data.query?.pages || {}).sort((a, b) => a.index - b.index);
       if (!pages.length) {
-        page.innerHTML = `<div class="msg">「${escapeHtml(s)}」に一致する記事は見つかりませんでした。</div>`;
+        page.innerHTML = `<div class="msg">${t('noResults', escapeHtml(s))}</div>`;
         return;
       }
       const list = document.createElement('div');
       list.className = 'results';
-      list.innerHTML = `<div class="meta">Wikipedia の検索結果 ・ ${pages.length} 件</div>`;
+      list.innerHTML = `<div class="meta">${t('resultsMeta', pages.length)}</div>`;
       for (const p of pages) {
-        const url = `${WIKI}/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`;
+        const url = `${wikiBase()}/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`;
         const item = document.createElement('div');
         item.className = 'result';
         item.innerHTML = `
@@ -961,24 +1988,24 @@
       page.innerHTML = '';
       page.appendChild(list);
     } catch (e) {
-      page.innerHTML = `<div class="msg">検索に失敗しました: ${escapeHtml(String(e))}</div>`;
+      page.innerHTML = `<div class="msg">${t('searchFailed', escapeHtml(String(e)))}</div>`;
     }
   }
 
   // ---------- browser UI ----------
   const BROWSER_HTML = `
     <div class="tabs">
-      <div class="dots"><button class="close-window" title="閉じる">×</button><span></span><span></span></div>
+      <div class="dots"><button class="close-window" data-i18n-title="close">×</button><span></span><span></span></div>
       <div class="tab-list"></div>
-      <button class="new-tab" title="新しいタブ">+</button>
+      <button class="new-tab" data-i18n-title="newTab">+</button>
     </div>
     <div class="toolbar">
-      <button class="back-btn" title="戻る" disabled>&#8592;</button>
-      <button class="fwd-btn" title="進む" disabled>&#8594;</button>
-      <button class="reload-btn" title="再読み込み">&#8635;</button>
-      <button class="home-btn" title="ホーム">&#8962;</button>
+      <button class="back-btn" data-i18n-title="back" disabled>&#8592;</button>
+      <button class="fwd-btn" data-i18n-title="forward" disabled>&#8594;</button>
+      <button class="reload-btn" data-i18n-title="reload">&#8635;</button>
+      <button class="home-btn" data-i18n-title="home">&#8962;</button>
       <input class="address" type="text" autocomplete="off" spellcheck="false"
-             placeholder="検索語または URL を入力">
+             data-i18n-placeholder="addressPlaceholder">
     </div>
     <div class="panes"></div>`;
 
@@ -999,6 +2026,7 @@
       face.prepend(root);
     }
     root.insertAdjacentHTML('afterbegin', BROWSER_HTML);
+    applyLang(root);
     const q = (sel) => face.querySelector(sel);
     const tabList = q('.tab-list'), panes = q('.panes'), address = q('.address');
     const backBtn = q('.back-btn'), fwdBtn = q('.fwd-btn');
@@ -1169,6 +2197,45 @@
     tabDrag.over = face;
   }
 
+  // ---------- pinch (スマホの 2 本指で拡大縮小) ----------
+  // 回転・タブのドラッグより先に受けて、2 本目の指が触れたらそちらを取り消す
+  const touches = new Map();   // pointerId -> { x, y }
+  let pinch = null;            // { d0, z0 }
+  const touchDist = () => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  scene.addEventListener('pointerdown', (e) => {
+    // 1 本目がページの中 (スクロールや操作) なら対象外。2 本目はどこに触れてもよい
+    if (e.pointerType !== 'touch' || (!touches.size && e.target.closest('.panes'))) return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size !== 2) return;
+    e.stopImmediatePropagation();
+    // 1 本目で始まっていた回転やタブのドラッグはやめる
+    dragging = false; down = null; vx = vy = 0;
+    if (tabDrag) { tabDrag.ghost?.remove(); tabDrag.over?.classList.remove('drop-target'); tabDrag = null; }
+    document.body.classList.remove('dragging');
+    pinch = { d0: touchDist(), z0: zoom };
+    target = null;
+  });
+  scene.addEventListener('pointermove', (e) => {
+    if (!touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!pinch || touches.size < 2) return;
+    e.stopImmediatePropagation();
+    zoom = Math.min(2.5, Math.max(0.3, pinch.z0 * touchDist() / pinch.d0));
+    apply();
+  });
+  const endTouch = (e) => {
+    if (!touches.delete(e.pointerId)) return;
+    if (pinch) {
+      e.stopImmediatePropagation();  // 指を離しても「クリック」扱いにしない
+      if (touches.size < 2) pinch = null;
+    }
+  };
+  scene.addEventListener('pointerup', endTouch);
+  scene.addEventListener('pointercancel', endTouch);
+
   scene.addEventListener('pointerdown', (e) => {
     const label = e.target.closest('.tab');
     if (e.button === 0 && label && !e.target.closest('.close')) {
@@ -1263,7 +2330,8 @@
   const angleDiff = (to, from) => ((to - from) % 360 + 540) % 360 - 180;
 
   function tick() {
-    if (!dragging) {
+    padTick();
+    if (!dragging && !padActive()) {
       if (target) {
         const drx = angleDiff(target.rx, rx), dry = angleDiff(target.ry, ry);
         rx += drx * 0.12; ry += dry * 0.12;
@@ -1286,6 +2354,167 @@
 
   $('seeThrough').addEventListener('click', () => document.body.classList.toggle('see-through'));
   $('resetView').addEventListener('click', () => turnTo(0, 0, 1));
+
+  // 全画面表示。iPhone の Safari は動画以外の全画面に対応していないので、そのときはボタンを出さない
+  const root = document.documentElement;
+  const requestFs = root.requestFullscreen || root.webkitRequestFullscreen;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const fsBtn = $('fullscreen');
+  if (!requestFs || depth > 0) {
+    fsBtn.hidden = true;
+  } else {
+    fsBtn.addEventListener('click', () => {
+      if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else requestFs.call(root);
+    });
+    const sync = () => { fsBtn.textContent = t(fsElement() ? 'exitFullscreen' : 'fullscreen'); };
+    sync();
+    onLangChange.push(sync);
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+  }
+
+  // 日本語 ⇄ English の切り替え
+  const langBtn = $('langToggle');
+  function setLang(next) {
+    lang = next;
+    try { localStorage.setItem(LANG_KEY, lang); } catch {}
+    document.documentElement.lang = lang;
+    langBtn.textContent = t('langToggle');
+    langBtn.title = t('langToggleTip');
+    applyLang();
+    for (const fn of onLangChange) fn();
+    // 開いているタブ: 文字だけのページは描き直し、動いているページ (小人など) は題名だけ変える
+    for (const label of document.querySelectorAll('.tab')) {
+      const tab = label._tab, entry = tab?.history[tab.index];
+      if (!tab) continue;
+      if (!entry || entry.type === 'info' || entry.type === 'search') render(tab);
+      else if (entry.type === 'draw') setMeta(tab, t('draw'), tab.addr);
+      else if (entry.type === 'horror') setMeta(tab, t('horror'), tab.addr);
+      else if (entry.type === 'kobito') setMeta(tab, t('kobito'), tab.addr);
+      else if (entry.type === 'self') setMeta(tab, '3D Browser', tab.addr);
+    }
+  }
+  langBtn.addEventListener('click', () => setLang(lang === 'ja' ? 'en' : 'ja'));
+
+  // ---------- 操作パネル ----------
+  // スティックを倒した向きに回る。中心から遠いほど速い (強さの 1.5 乗に比例)
+  const pad = $('pad'), stick = pad.querySelector('.stick'), knob = pad.querySelector('.knob');
+  const padShow = $('padShow'), padHint = $('padHint');
+  const PAD_SPEED = 220;      // いっぱいに倒したときの回転の速さ (度/秒)
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  };
+  let stickVec = null;        // スティックを倒している量 { x, y } (-1〜1)。離しているときは null
+  let keyVec = { x: 0, y: 0 };  // 矢印キーで倒している量
+  let zoomDir = 0;            // ＋/− を押し続けている向き
+  let lastPadT = performance.now();
+  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomDir;
+
+  function padTick() {
+    const now = performance.now(), dt = Math.min(0.05, (now - lastPadT) / 1000);
+    lastPadT = now;
+    const v = stickVec || keyVec;
+    const m = Math.hypot(v.x, v.y);
+    if (m > 0.05) {
+      const k = PAD_SPEED * Math.pow(Math.min(1, m), 1.5) / m * dt;
+      // 背景のドラッグと同じ向き: 右に倒すと右へ、上に倒すと上へ回る
+      ry += v.x * k; rx -= v.y * k;
+      target = null;
+      // 離したときに少しだけ惰性で回り続けるよう、今の速さを覚えておく
+      vy = v.x * k; vx = -v.y * k;
+      apply();
+    }
+    if (zoomDir) {
+      zoom = Math.min(2.5, Math.max(0.3, zoom * Math.exp(zoomDir * 0.8 * dt)));
+      target = null;
+      apply();
+    }
+  }
+
+  // 使い始めの合図: 最初は光らせ、初めて触ったらやめて、ドラッグでも回せることを 1 回だけ教える
+  function firstUse() {
+    if (!pad.classList.contains('glow')) return;
+    pad.classList.remove('glow');
+    store.set('3d-browser-pad-used', '1');
+    padHint.classList.add('show');
+    setTimeout(() => padHint.classList.remove('show'), 3500);
+  }
+
+  function setStick(e) {
+    const r = stick.getBoundingClientRect();
+    const R = r.width / 2;
+    let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R;
+    const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    stickVec = { x, y };
+    knob.style.transform = `translate(${x * R * 0.62}px, ${y * R * 0.62}px)`;
+  }
+  stick.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    stick.setPointerCapture(e.pointerId);
+    stick.classList.add('active');
+    firstUse();
+    setStick(e);
+  });
+  stick.addEventListener('pointermove', (e) => { if (stickVec) setStick(e); });
+  const stickUp = () => {
+    stickVec = null;
+    stick.classList.remove('active');
+    knob.style.transform = '';
+  };
+  stick.addEventListener('pointerup', stickUp);
+  stick.addEventListener('pointercancel', stickUp);
+
+  // ＋/−: 押している間、拡大・縮小し続ける
+  for (const [sel, dir] of [['.zoom-in', 1], ['.zoom-out', -1]]) {
+    const b = pad.querySelector(sel);
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      b.setPointerCapture(e.pointerId);
+      firstUse();
+      zoomDir = dir;
+    });
+    const stop = () => { zoomDir = 0; };
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointercancel', stop);
+  }
+
+  // 矢印キー (文字を入力しているときは効かない)
+  const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const held = new Set();
+  const typing = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  function syncKeys() {
+    keyVec = { x: 0, y: 0 };
+    for (const k of held) { keyVec.x += KEYS[k][0] * 0.6; keyVec.y += KEYS[k][1] * 0.6; }
+  }
+  addEventListener('keydown', (e) => {
+    if (!KEYS[e.key] || typing(document.activeElement) || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    held.add(e.key);
+    syncKeys();
+  });
+  addEventListener('keyup', (e) => { if (held.delete(e.key)) syncKeys(); });
+  addEventListener('blur', () => { held.clear(); syncKeys(); });
+
+  // 隠す / 表示する (次回も覚えておく)。入れ子の中ではごちゃごちゃするので出さない
+  function showPad(on) {
+    pad.hidden = !on;
+    padShow.hidden = on;
+    store.set('3d-browser-pad-hidden', on ? '' : '1');
+  }
+  pad.querySelector('.pad-hide').addEventListener('click', () => showPad(false));
+  padShow.addEventListener('click', () => showPad(true));
+  padShow.dataset.i18nTitle = 'showPad';
+  if (depth > 0) {
+    pad.hidden = true;
+    padShow.hidden = true;
+  } else {
+    showPad(store.get('3d-browser-pad-hidden') !== '1');
+    if (!store.get('3d-browser-pad-used')) pad.classList.add('glow');
+  }
+  setLang(lang);
 
   // 最初は前面だけブラウザにしておく (最初の斜めの向きを保つため openFace は使わない)
   makeBrowser(box.querySelector('.front')).addTab(createTab());

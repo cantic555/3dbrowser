@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Browser</title>
+<style>
+  :root {
+    --W: 960px;
+    --H: 600px;
+    --D: 56px;
+    --frame: #e9eaee;
+    --frame-dark: #d3d5db;
+    --side: #c4c7cf;
+    --accent: #3b6cf6;
+    --text: #1f2328;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 40%, #2a2f3a 0%, #12141a 70%);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---------- scene ---------- */
+  #scene {
+    position: fixed; inset: 0;
+    perspective: 2200px;
+    display: grid; place-items: center;
+    touch-action: none;
+    cursor: grab;
+  }
+  body.dragging #scene { cursor: grabbing; }
+  body.dragging iframe { pointer-events: none; }
+  body.dragging { user-select: none; }
+
+  #box {
+    position: relative;
+    width: var(--W); height: var(--H);
+    transform-style: preserve-3d;
+  }
+  .face {
+    position: absolute;
+    backface-visibility: hidden;
+    overflow: hidden;
+    /* 側面ブラウザを開いたときに厚みがなめらかに変わるように */
+    transition: transform .6s ease, width .6s ease, height .6s ease, left .6s ease, top .6s ease;
+  }
+  .face .shade {
+    position: absolute; inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .front  { inset: 0; transform: translateZ(calc(var(--D) / 2)); border-radius: 12px; }
+  .back   { inset: 0; transform: rotateY(180deg) translateZ(calc(var(--D) / 2)); border-radius: 12px; }
+  .right, .left {
+    width: var(--D); height: var(--H);
+    left: calc((var(--W) - var(--D)) / 2); top: 0;
+  }
+  .right  { transform: rotateY(90deg)  translateZ(calc(var(--W) / 2)); }
+  .left   { transform: rotateY(-90deg) translateZ(calc(var(--W) / 2)); }
+  .top, .bottom {
+    width: var(--W); height: var(--D);
+    left: 0; top: calc((var(--H) - var(--D)) / 2);
+  }
+  .top    { transform: rotateX(90deg)  translateZ(calc(var(--H) / 2)); }
+  .bottom { transform: rotateX(-90deg) translateZ(calc(var(--H) / 2)); }
+
+  .right, .left, .top, .bottom {
+    background: linear-gradient(90deg, var(--side), #dfe1e6 50%, var(--side));
+  }
+  .top, .bottom {
+    background: linear-gradient(180deg, var(--side), #dfe1e6 50%, var(--side));
+  }
+  .face:not(.browser):is(.side, .back, .front) { cursor: pointer; }
+  /* 閉じた前面は背面と同じ板にする (クリックでまた開く) */
+  .front:not(.browser) { background: linear-gradient(135deg, #d9dbe1, #bfc3cc); }
+  .back.browser { place-items: normal; }  /* ロゴ用の中央寄せを解除 */
+  .back.browser .logo { display: none; }
+
+  .back {
+    background: linear-gradient(135deg, #d9dbe1, #bfc3cc);
+    display: grid; place-items: center;
+  }
+  .back .logo {
+    font-size: 64px; font-weight: 800; letter-spacing: .3em;
+    color: rgba(255,255,255,.55);
+    text-shadow: 0 1px 0 rgba(0,0,0,.15);
+  }
+
+  /* ---------- browser UI (前面・側面で共通) ---------- */
+  .face.browser {
+    background: var(--frame);
+    display: flex; flex-direction: column;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.6);
+  }
+  /* 側面ブラウザ: 広い幅でレイアウトして、厚みの幅まで縦横同じ倍率で縮める */
+  .squash {
+    flex: none;
+    display: flex; flex-direction: column;
+    transform-origin: 0 0;
+  }
+  .tabs {
+    height: 40px; flex: none; display: flex; align-items: flex-end; gap: 8px;
+    padding: 0 12px;
+    background: var(--frame-dark);
+  }
+  .dots { display: flex; gap: 8px; align-self: center; margin-right: 8px; }
+  .dots > * { width: 12px; height: 12px; border-radius: 50%; }
+  .dots > :nth-child(1) { background: #ff5f57; }
+  .dots > :nth-child(2) { background: #febc2e; }
+  .dots > :nth-child(3) { background: #28c840; }
+  /* 赤 = 閉じる (Mac と同じ)。マウスを乗せると × を出す */
+  .dots .close-window {
+    border: 0; padding: 0; cursor: pointer; position: relative;
+    color: transparent; font-size: 9px; line-height: 12px; text-align: center;
+  }
+  .dots:hover .close-window { color: rgba(0,0,0,.55); }
+  .tab-list { display: flex; align-items: flex-end; gap: 2px; min-width: 0; flex: 0 1 auto; }
+  .tab {
+    flex: 0 1 200px; min-width: 56px; height: 32px;
+    padding: 0 6px 0 12px; border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; user-select: none; cursor: default;
+  }
+  .tab:hover { background: rgba(255,255,255,.35); }
+  .tab.active { background: var(--frame); }
+  .new-tab {
+    flex: none; align-self: center; width: 28px; height: 28px;
+    border: 0; border-radius: 50%; background: transparent;
+    color: #444; font-size: 18px; line-height: 1; cursor: pointer;
+  }
+  .new-tab:hover { background: rgba(0,0,0,.08); }
+  /* ドラッグ中のタブ */
+  .tab-ghost {
+    position: fixed; left: 0; top: 0; z-index: 100; pointer-events: none;
+    max-width: 220px; padding: 6px 12px; border-radius: 8px;
+    background: #fff; color: var(--text); font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  }
+  .face.drop-target { outline: 4px solid var(--accent); outline-offset: -4px; }
+  .tab-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab .close {
+    width: 20px; height: 20px; border: 0; border-radius: 50%;
+    background: transparent; color: #666; font-size: 11px; cursor: pointer;
+  }
+  .tab .close:hover { background: rgba(0,0,0,.08); }
+
+  .toolbar {
+    height: 46px; flex: none; display: flex; align-items: center; gap: 6px;
+    padding: 0 10px;
+  }
+  .toolbar button {
+    width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%;
+    background: transparent; color: #444; font-size: 16px; cursor: pointer;
+  }
+  .toolbar button:hover:not(:disabled) { background: rgba(0,0,0,.07); }
+  .toolbar button:disabled { color: #bbb; cursor: default; }
+  .address {
+    flex: 1; min-width: 0; height: 32px; border: 0; border-radius: 16px;
+    padding: 0 16px; font-size: 14px;
+    background: #fff; outline: none;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+  }
+  .address:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+
+  .panes {
+    position: relative; flex: 1;
+    margin: 0 8px 8px; border-radius: 6px;
+    background: #fff; overflow: hidden;
+    cursor: auto;
+  }
+  /* タブごとの表示領域。切り替えても iframe の状態が残るよう、隠すだけにする */
+  .viewport { position: absolute; inset: 0; }
+  .viewport[hidden] { display: none; }
+  .viewport iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .page { position: absolute; inset: 0; overflow: auto; }
+  .draw { display: block; width: 100%; height: 100%; background: #fff; touch-action: none; cursor: crosshair; }
+  .draw-clear {
+    position: absolute; right: 12px; bottom: 12px;
+    width: 36px; height: 36px; padding: 0; border-radius: 50%;
+    display: grid; place-items: center;
+    border: 1px solid #dde0e6; background: #f7f8fa; color: #555; cursor: pointer;
+  }
+  .draw-clear:hover { background: #eef1f8; border-color: #c9d3ee; }
+
+  .notice {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 6px 12px; font-size: 12px;
+    background: rgba(255,248,220,.95); color: #6b5800;
+    border-top: 1px solid #f0e2a8;
+    display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
+  }
+  .notice a { color: var(--accent); }
+  .notice button { margin-left: auto; border: 0; background: none; cursor: pointer; color: #6b5800; }
+
+  /* start page */
+  .start {
+    min-height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    padding: 24px 16px; text-align: center;
+  }
+  .start h1 { margin: 0; font-size: 44px; letter-spacing: .02em; }
+  .start h1 span { color: var(--accent); }
+  .start p { margin: 0; color: var(--muted); font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 560px; }
+  .chips button {
+    border: 1px solid #dde0e6; background: #f7f8fa; border-radius: 999px;
+    padding: 6px 14px; font-size: 13px; cursor: pointer;
+  }
+  .chips button:hover { background: #eef1f8; border-color: #c9d3ee; }
+
+  /* search results */
+  .results { max-width: 720px; padding: 24px 32px 48px; }
+  .results .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .result {
+    display: flex; gap: 14px; padding: 14px 0;
+    border-bottom: 1px solid #eee; cursor: pointer;
+  }
+  .result:hover h3 { text-decoration: underline; }
+  .result img, .result .noimg {
+    width: 72px; height: 72px; border-radius: 6px; object-fit: cover; flex: none;
+    background: #f0f1f4;
+  }
+  .result h3 { margin: 0 0 4px; font-size: 17px; color: #1a0dab; font-weight: 500; }
+  .result .url { font-size: 12px; color: #188038; margin-bottom: 4px; word-break: break-all; }
+  .result p { margin: 0; font-size: 13px; color: #4d5156; line-height: 1.6;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .msg { padding: 40px; color: var(--muted); text-align: center; }
+
+  /* 側面ブラウザ向けの詰めたレイアウト */
+  .side .start h1 { font-size: 30px; }
+  .side .results { padding: 16px; }
+
+  /* 透過モード: 面を半透明にし、裏向きの面も描いて箱の反対側が透けて見えるようにする */
+  body.see-through .face { opacity: .3; backface-visibility: visible; }
+  body.see-through .face.browser { opacity: .75; }
+  /* 右下の操作ボタン */
+  #controls { position: fixed; right: 16px; bottom: 10px; z-index: 20; display: flex; gap: 8px; }
+  #controls button {
+    padding: 6px 14px; border-radius: 999px; font-size: 12px;
+    border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08);
+    color: rgba(255,255,255,.8); cursor: pointer;
+  }
+  #controls button:hover { background: rgba(255,255,255,.16); }
+  body.see-through #seeThrough { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* hint */
+  #hint {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    color: rgba(255,255,255,.55); font-size: 12px; pointer-events: none;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="scene">
+  <div id="box">
+    <div class="face front"><div class="shade"></div></div>
+    <div class="face back"><div class="logo">BROWSER</div><div class="shade"></div></div>
+    <div class="face side right"><div class="shade"></div></div>
+    <div class="face side left"><div class="shade"></div></div>
+    <div class="face side top"><div class="shade"></div></div>
+    <div class="face side bottom"><div class="shade"></div></div>
+  </div>
+</div>
+<div id="controls">
+  <button id="resetView" title="向きと大きさを正面に戻す">リセット</button>
+  <button id="seeThrough" title="面を半透明にして反対側を透かして見る">透過</button>
+</div>
+<div id="hint">枠や背景をドラッグで回転 ・ どの面もクリックでブラウザ (赤丸で閉じる) ・ タブはドラッグで側面へ移動 ・ 画面外でホイール (または Ctrl+ホイール) で拡大縮小 ・ ダブルクリックで元に戻る</div>
+
+<script>
+(() => {
+  const W = 960, H = 600;
+  const SIDE_W = 400;  // 側面ブラウザの短い辺の長さ。厚みに収まるよう縦横同じ倍率で縮めて表示する
+  const WIKI = 'https://ja.wikipedia.org';
+
+  const $ = (id) => document.getElementById(id);
+  const box = $('box'), scene = $('scene');
+
+  // このサイト自身を開くと入れ子になる。ブラウザは祖先と同じ URL の iframe を
+  // 読み込まないので、階層ごとに ?depth= を変えて別の URL にする
+  const depth = Number(new URLSearchParams(location.search).get('depth')) || 0;
+  if (depth > 0) $('hint').hidden = true;  // 操作説明は一番外側だけに出す
+  function selfUrl(d) {
+    const u = new URL(location.href);
+    u.search = `?depth=${d}`;
+    u.hash = '';
+    return u.href;
+  }
+  function isSelf(url) {
+    try {
+      const u = new URL(url);
+      return u.origin === location.origin && u.pathname === location.pathname;
+    } catch { return false; }
+  }
+
+  function isUrl(s) {
+    return /^(https?|file):\/\//i.test(s) || /^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(s);
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ---------- tabs ----------
+  // タブは自分の表示領域 (pane) と履歴を持つ。ブラウザ間を移動できる
+  function createTab() {
+    const tab = {
+      browser: null,
+      history: [null], index: 0,
+      title: '新しいタブ', addr: '',
+      label: document.createElement('div'),
+      pane: document.createElement('div'),
+    };
+    tab.label.className = 'tab';
+    tab.label.innerHTML = '<span class="tab-title"></span><button class="close" title="タブを閉じる">✕</button>';
+    tab.label.querySelector('.close').addEventListener('click', () => tab.browser.closeTab(tab));
+    tab.label._tab = tab;
+    tab.pane.className = 'viewport';
+    render(tab);
+    return tab;
+  }
+
+  function setMeta(tab, title, addr) {
+    tab.title = title;
+    tab.addr = addr;
+    tab.label.querySelector('.tab-title').textContent = title;
+    tab.label.title = title;
+    tab.browser?.sync(tab);
+  }
+
+  function navigate(tab, input, push = true) {
+    const s = input.trim();
+    if (!s) return;
+    const entry = s === 'about:draw' ? { type: 'draw' }
+      : isUrl(s) ? { type: 'url', value: /^(https?|file):\/\//i.test(s) ? s : 'https://' + s }
+      : { type: 'search', value: s };
+    if (push) {
+      tab.history.splice(tab.index + 1);
+      tab.history.push(entry);
+      tab.index = tab.history.length - 1;
+    }
+    render(tab);
+  }
+
+  function render(tab) {
+    const entry = tab.history[tab.index];
+    tab.pane.innerHTML = '';
+    if (!entry) renderStart(tab);
+    else if (entry.type === 'draw') renderDraw(tab);
+    else if (entry.type === 'url') renderUrl(tab, entry.value);
+    else renderSearch(tab, entry.value);
+    tab.browser?.sync(tab);
+  }
+
+  function renderStart(tab) {
+    setMeta(tab, '新しいタブ', '');
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = `
+      <div class="start">
+        <h1>3D <span>Browser</span></h1>
+        <p>検索語を入れると Wikipedia を検索、URL を入れるとそのサイトを表示します</p>
+        <div class="chips">
+          <button data-self>3D Browser</button>
+          ${[['ケノン脱毛', 'https://ケノン.com/'],
+             ['cantic.org', 'https://www.cantic.org/%E4%BD%9C%E3%81%A3%E3%81%9F%E3%82%A2%E3%83%97%E3%83%AA'],
+             ['zoomquilt', 'https://zoomquilt.org/'], ['お絵描き', 'about:draw']]
+            .map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('')}
+        </div>
+      </div>`;
+    page.querySelectorAll('[data-q]').forEach((b) =>
+      b.addEventListener('click', () => navigate(tab, b.dataset.q)));
+    page.querySelector('[data-self]').addEventListener('click', () => navigate(tab, selfUrl(depth + 1)));
+    tab.pane.appendChild(page);
+  }
+
+  // ドラッグで線を引くだけのお絵描き。右上のボタンで全部消す
+  function renderDraw(tab) {
+    setMeta(tab, 'お絵描き', 'about:draw');
+    const canvas = document.createElement('canvas');
+    canvas.className = 'draw';
+    tab.pane.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const clear = document.createElement('button');
+    clear.className = 'draw-clear';
+    clear.title = 'クリア';
+    clear.setAttribute('aria-label', 'クリア');
+    // ゴミ箱アイコン
+    clear.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
+    clear.addEventListener('click', () => ctx.clearRect(0, 0, canvas.width, canvas.height));
+    tab.pane.appendChild(clear);
+    const R = 2;  // 拡大しても線が粗くならないよう、表示の 2 倍の解像度で描く
+
+    // 表示サイズに合わせてキャンバスを作り直す (描いた内容は左上基準で残す)
+    function fit() {
+      const w = canvas.clientWidth * R, h = canvas.clientHeight * R;
+      if (!w || !h || (canvas.width === w && canvas.height === h)) return;
+      const old = document.createElement('canvas');
+      old.width = canvas.width; old.height = canvas.height;
+      old.getContext('2d').drawImage(canvas, 0, 0);
+      canvas.width = w; canvas.height = h;
+      ctx.drawImage(old, 0, 0);
+    }
+    new ResizeObserver(fit).observe(canvas);
+
+    // offsetX/Y は 3D 変形や縮小を戻した要素内の座標なので、傾けたままでも正しく描ける
+    let last = null;
+    function line(x, y) {
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 4 * R;
+      ctx.lineCap = ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(last[0] * R, last[1] * R);
+      ctx.lineTo(x * R, y * R);
+      ctx.stroke();
+      last = [x, y];
+    }
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      fit();
+      canvas.setPointerCapture(e.pointerId);
+      last = [e.offsetX, e.offsetY];
+      line(e.offsetX, e.offsetY);  // クリックだけでも点が打てる
+    });
+    canvas.addEventListener('pointermove', (e) => { if (last) line(e.offsetX, e.offsetY); });
+    const end = () => { last = null; };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+  }
+
+  function renderUrl(tab, url) {
+    // new URL() は日本語ドメインを xn--… に変換してしまうので、文字列から取り出す
+    const host = url.match(/^[a-z]+:\/\/([^/?#:]+)/i)?.[1] ?? url;
+    // アドレスバーには %E4%BD%9C… のようなエンコードを日本語に戻して表示する
+    let shown = url;
+    try { shown = decodeURI(url); } catch {}
+    setMeta(tab, isSelf(url) ? '3D Browser' : host || url, shown);
+
+    const frame = document.createElement('iframe');
+    frame.src = url;
+    frame.referrerPolicy = 'no-referrer';
+    tab.pane.appendChild(frame);
+    if (isSelf(url)) return;  // 自分自身は必ず表示できるので案内は不要
+
+    // 埋め込み拒否 (X-Frame-Options / CSP) はブラウザから検知できないため常に案内を出す
+    const notice = document.createElement('div');
+    notice.className = 'notice';
+    notice.innerHTML = `<span>表示されない場合、このサイトは埋め込みを拒否しています。</span>
+      <a href="${url}" target="_blank" rel="noopener">新しいタブで開く ↗</a>
+      <button title="閉じる">✕</button>`;
+    notice.querySelector('button').addEventListener('click', () => notice.remove());
+    tab.pane.appendChild(notice);
+  }
+
+  async function renderSearch(tab, s) {
+    setMeta(tab, `${s} - 検索`, s);
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = '<div class="msg">検索中…</div>';
+    tab.pane.appendChild(page);
+
+    const params = new URLSearchParams({
+      action: 'query', format: 'json', origin: '*',
+      generator: 'search', gsrsearch: s, gsrlimit: '15',
+      prop: 'pageimages|extracts', piprop: 'thumbnail', pithumbsize: '144',
+      exintro: '1', explaintext: '1', exsentences: '3', exlimit: 'max',
+    });
+    try {
+      const res = await fetch(`${WIKI}/w/api.php?${params}`);
+      const data = await res.json();
+      if (page.parentNode !== tab.pane) return;  // 結果が届く前に別のページへ移った
+      const pages = Object.values(data.query?.pages || {}).sort((a, b) => a.index - b.index);
+      if (!pages.length) {
+        page.innerHTML = `<div class="msg">「${escapeHtml(s)}」に一致する記事は見つかりませんでした。</div>`;
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'results';
+      list.innerHTML = `<div class="meta">Wikipedia の検索結果 ・ ${pages.length} 件</div>`;
+      for (const p of pages) {
+        const url = `${WIKI}/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`;
+        const item = document.createElement('div');
+        item.className = 'result';
+        item.innerHTML = `
+          ${p.thumbnail ? `<img src="${p.thumbnail.source}" alt="">` : '<div class="noimg"></div>'}
+          <div>
+            <div class="url">${escapeHtml(decodeURIComponent(url))}</div>
+            <h3>${escapeHtml(p.title)}</h3>
+            <p>${escapeHtml(p.extract || '')}</p>
+          </div>`;
+        item.addEventListener('click', () => navigate(tab, url));
+        list.appendChild(item);
+      }
+      page.innerHTML = '';
+      page.appendChild(list);
+    } catch (e) {
+      page.innerHTML = `<div class="msg">検索に失敗しました: ${escapeHtml(String(e))}</div>`;
+    }
+  }
+
+  // ---------- browser UI ----------
+  const BROWSER_HTML = `
+    <div class="tabs">
+      <div class="dots"><button class="close-window" title="閉じる">×</button><span></span><span></span></div>
+      <div class="tab-list"></div>
+      <button class="new-tab" title="新しいタブ">+</button>
+    </div>
+    <div class="toolbar">
+      <button class="back-btn" title="戻る" disabled>&#8592;</button>
+      <button class="fwd-btn" title="進む" disabled>&#8594;</button>
+      <button class="reload-btn" title="再読み込み">&#8635;</button>
+      <button class="home-btn" title="ホーム">&#8962;</button>
+      <input class="address" type="text" autocomplete="off" spellcheck="false"
+             placeholder="検索語または URL を入力">
+    </div>
+    <div class="panes"></div>`;
+
+  // face の中にブラウザを作る。タブがすべてなくなったら onEmpty を呼ぶ
+  function createBrowser(face, { onEmpty, squash = false }) {
+    face.classList.add('browser');
+    let root = face;
+    if (squash) {
+      // 短い辺 (厚み) が SIDE_W になるようにレイアウトし、縦横同じ倍率で面の大きさまで縮める。
+      // 長い辺は縮めたときに面の長さになるよう逆算する
+      // (左右の面はとても縦長、上下の面はとても横長のブラウザになる)
+      const s = Math.min(face.offsetWidth, face.offsetHeight) / SIDE_W;
+      root = document.createElement('div');
+      root.className = 'squash';
+      root.style.width = `${face.offsetWidth / s}px`;
+      root.style.height = `${face.offsetHeight / s}px`;
+      root.style.transform = `scale(${s})`;
+      face.prepend(root);
+    }
+    root.insertAdjacentHTML('afterbegin', BROWSER_HTML);
+    const q = (sel) => face.querySelector(sel);
+    const tabList = q('.tab-list'), panes = q('.panes'), address = q('.address');
+    const backBtn = q('.back-btn'), fwdBtn = q('.fwd-btn');
+
+    const browser = {
+      face, tabs: [], active: null,
+
+      addTab(tab) {
+        tab.browser = browser;
+        browser.tabs.push(tab);
+        tabList.appendChild(tab.label);
+        panes.appendChild(tab.pane);
+        browser.activate(tab);
+      },
+
+      activate(tab) {
+        browser.active = tab;
+        for (const t of browser.tabs) {
+          t.label.classList.toggle('active', t === tab);
+          t.pane.hidden = t !== tab;
+        }
+        browser.sync(tab);
+      },
+
+      // タブを取り外す (移動にも使う)。閉じたタブの隣を表示する
+      removeTab(tab) {
+        const i = browser.tabs.indexOf(tab);
+        browser.tabs.splice(i, 1);
+        tab.label.remove();
+        tab.pane.remove();
+        tab.browser = null;
+        if (!browser.tabs.length) return onEmpty();
+        if (browser.active === tab) browser.activate(browser.tabs[Math.min(i, browser.tabs.length - 1)]);
+      },
+
+      closeTab(tab) {
+        browser.removeTab(tab);
+      },
+
+      // アドレスバーと戻る/進むボタンを表示中のタブに合わせる
+      sync(tab) {
+        if (tab !== browser.active) return;
+        if (document.activeElement !== address) address.value = tab.addr;
+        backBtn.disabled = tab.index <= 0;
+        fwdBtn.disabled = tab.index >= tab.history.length - 1;
+      },
+    };
+    face._browser = browser;
+
+    address.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { navigate(browser.active, address.value); address.blur(); }
+    });
+    address.addEventListener('focus', () => address.select());
+    backBtn.addEventListener('click', () => {
+      const t = browser.active;
+      if (t.index > 0) { t.index--; render(t); }
+    });
+    fwdBtn.addEventListener('click', () => {
+      const t = browser.active;
+      if (t.index < t.history.length - 1) { t.index++; render(t); }
+    });
+    q('.reload-btn').addEventListener('click', () => render(browser.active));
+    q('.home-btn').addEventListener('click', () => {
+      const t = browser.active;
+      t.history.splice(t.index + 1); t.history.push(null); t.index = t.history.length - 1;
+      render(t);
+    });
+    q('.new-tab').addEventListener('click', () => browser.addTab(createTab()));
+    q('.close-window').addEventListener('click', onEmpty);  // タブごとブラウザを閉じる
+    return browser;
+  }
+
+  function moveTab(tab, to) {
+    if (tab.browser === to) return;
+    tab.browser.removeTab(tab);
+    to.addTab(tab);
+  }
+
+  // ---------- face browsers ----------
+  // ブラウザにできる面。側面は厚みに合わせて縮め、前面・背面はそのままの大きさで開く
+  const OPENABLE = '.front, .side, .back';
+  const FACING = { front: [0, 0], right: [-8, -72], left: [-8, 72], top: [-72, 0], bottom: [72, 0], back: [-8, 180] };
+
+  function makeBrowser(face) {
+    return createBrowser(face, { onEmpty: () => closeFace(face), squash: face.classList.contains('side') });
+  }
+
+  function openFace(face, tab = createTab()) {
+    makeBrowser(face).addTab(tab);
+    // 開いた面がこちらを向くように回す
+    const [trx, try_] = FACING[Object.keys(FACING).find((c) => face.classList.contains(c))];
+    turnTo(trx, try_);
+  }
+
+  // ブラウザを閉じて元の面に戻す。タブが残っていれば一緒に捨てる
+  function closeFace(face) {
+    face.classList.remove('browser');
+    face._browser = null;
+    for (const el of [...face.children]) {
+      if (!el.classList.contains('shade') && !el.classList.contains('logo')) el.remove();
+    }
+  }
+
+  // ---------- 3D rotation ----------
+  let rx = -10, ry = 22;          // 現在の角度 (deg)
+  let vx = 0, vy = 0;             // 慣性
+  let zoom = 1;
+  let dragging = false, lastX = 0, lastY = 0, lastT = 0;
+  let down = null;                // クリック判定用: 押した位置と要素
+  let target = null;              // 自動で回すときの目標 { rx, ry, zoom? }
+
+  const faces = [
+    ['.front',  [0, 0, 1]], ['.back',   [0, 0, -1]],
+    ['.right',  [1, 0, 0]], ['.left',   [-1, 0, 0]],
+    ['.top',    [0, -1, 0]], ['.bottom', [0, 1, 0]],
+  ].map(([sel, n]) => {
+    const el = box.querySelector(sel);
+    return { el, shade: el.querySelector('.shade'), n };
+  });
+  const L = normalize([-0.35, -0.55, 1]);  // 左上手前からの光
+
+  function normalize(v) { const l = Math.hypot(...v); return v.map((x) => x / l); }
+
+  function fitScale() {
+    return Math.min(innerWidth * 0.82 / W, innerHeight * 0.78 / H) * zoom;
+  }
+
+  function apply() {
+    box.style.transform = `scale(${fitScale()}) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    // CSS は rotateY → rotateX の順で点に作用する
+    const a = ry * Math.PI / 180, b = rx * Math.PI / 180;
+    for (const f of faces) {
+      const [x, y, z] = f.n;
+      const x1 = x * Math.cos(a) + z * Math.sin(a);
+      const z1 = -x * Math.sin(a) + z * Math.cos(a);
+      const y2 = y * Math.cos(b) - z1 * Math.sin(b);
+      const z2 = y * Math.sin(b) + z1 * Math.cos(b);
+      const lit = Math.max(0, x1 * L[0] + y2 * L[1] + z2 * L[2]);
+      // ブラウザになっている面は読みやすさ優先で陰を弱くする
+      const k = f.el.classList.contains('browser') ? 0.25 : 0.5;
+      f.shade.style.opacity = ((1 - lit) * k).toFixed(3);
+    }
+  }
+
+  function turnTo(trx, try_, tzoom) {
+    target = { rx: trx, ry: try_, zoom: tzoom };
+    vx = vy = 0;
+  }
+
+  // 操作できる要素やページ表示部分の上では回転しない
+  const interactive = (el) => el.closest('input, button, a, .panes, .tab');
+
+  // ---------- tab drag ----------
+  // タブをドラッグして、別のブラウザや閉じている側面へ移動する
+  let tabDrag = null;   // { tab, x, y, ghost, over }
+
+  function dropTargetAt(x, y) {
+    const face = document.elementFromPoint(x, y)?.closest(OPENABLE);
+    if (!face) return null;
+    if (face.classList.contains('browser')) return face._browser === tabDrag.tab.browser ? null : face;
+    return face;  // 閉じている側面
+  }
+
+  function setDropTarget(face) {
+    if (tabDrag.over === face) return;
+    tabDrag.over?.classList.remove('drop-target');
+    face?.classList.add('drop-target');
+    tabDrag.over = face;
+  }
+
+  scene.addEventListener('pointerdown', (e) => {
+    const label = e.target.closest('.tab');
+    if (e.button === 0 && label && !e.target.closest('.close')) {
+      tabDrag = { tab: label._tab, x: e.clientX, y: e.clientY, ghost: null, over: null };
+      scene.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button !== 0 || interactive(e.target)) return;
+    dragging = true; target = null;
+    vx = vy = 0;
+    lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
+    down = { x: e.clientX, y: e.clientY, el: e.target };
+    scene.setPointerCapture(e.pointerId);
+    document.body.classList.add('dragging');
+  });
+  scene.addEventListener('pointermove', (e) => {
+    if (tabDrag) {
+      if (!tabDrag.ghost) {
+        if (Math.hypot(e.clientX - tabDrag.x, e.clientY - tabDrag.y) < 5) return;
+        tabDrag.ghost = document.createElement('div');
+        tabDrag.ghost.className = 'tab-ghost';
+        tabDrag.ghost.textContent = tabDrag.tab.title;
+        document.body.appendChild(tabDrag.ghost);
+        document.body.classList.add('dragging');
+      }
+      tabDrag.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 8}px)`;
+      setDropTarget(dropTargetAt(e.clientX, e.clientY));
+      return;
+    }
+    if (!dragging) return;
+    const now = performance.now();
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    const dt = Math.max(1, now - lastT);
+    ry += dx * 0.4; rx -= dy * 0.4;
+    vy = dx * 0.4 / dt * 16; vx = -dy * 0.4 / dt * 16;
+    lastX = e.clientX; lastY = e.clientY; lastT = now;
+    apply();
+  });
+  function endTabDrag(e) {
+    const { tab, ghost, over } = tabDrag;
+    tabDrag = null;
+    if (!ghost) {  // 動かさずに離した = タブの切り替え
+      tab.browser.activate(tab);
+      return;
+    }
+    ghost.remove();
+    over?.classList.remove('drop-target');
+    document.body.classList.remove('dragging');
+    if (e.type !== 'pointerup' || !over) return;
+    if (over.classList.contains('browser')) {
+      moveTab(tab, over._browser);
+    } else {
+      tab.browser.removeTab(tab);
+      openFace(over, tab);
+    }
+  }
+
+  const endDrag = (e) => {
+    if (tabDrag) return endTabDrag(e);
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('dragging');
+    if (performance.now() - lastT > 80) vx = vy = 0;  // 止めてから離した場合は慣性なし
+    // ほとんど動かさずに離した = クリック。側面ならブラウザを開く
+    if (e.type === 'pointerup' && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) {
+      const side = down.el.closest(OPENABLE);
+      if (side && !side.classList.contains('browser')) openFace(side);
+    }
+    down = null;
+  };
+  scene.addEventListener('pointerup', endDrag);
+  scene.addEventListener('pointercancel', endDrag);
+
+  scene.addEventListener('dblclick', (e) => {
+    // 閉じている面のダブルクリックは「開く」操作なので、向きのリセットはしない
+    const face = e.target.closest(OPENABLE);
+    if (interactive(e.target) || (face && !face.classList.contains('browser'))) return;
+    turnTo(0, 0, 1);
+  });
+
+  scene.addEventListener('wheel', (e) => {
+    // Ctrl+ホイール / ピンチは、どこでもブラウザ自体の拡大ではなく 3D の拡大縮小にする
+    if (!e.ctrlKey && interactive(e.target)) return;
+    e.preventDefault();
+    zoom = Math.min(2.5, Math.max(0.3, zoom * Math.exp(-e.deltaY * 0.001)));
+    apply();
+  }, { passive: false });
+
+  addEventListener('resize', apply);
+
+  // 角度の差を -180〜180 に収める (最短方向で回すため)
+  const angleDiff = (to, from) => ((to - from) % 360 + 540) % 360 - 180;
+
+  function tick() {
+    if (!dragging) {
+      if (target) {
+        const drx = angleDiff(target.rx, rx), dry = angleDiff(target.ry, ry);
+        rx += drx * 0.12; ry += dry * 0.12;
+        if (target.zoom !== undefined) zoom += (target.zoom - zoom) * 0.12;
+        if (Math.abs(drx) < 0.05 && Math.abs(dry) < 0.05 &&
+            (target.zoom === undefined || Math.abs(zoom - target.zoom) < 0.002)) {
+          rx = target.rx; ry = target.ry;
+          if (target.zoom !== undefined) zoom = target.zoom;
+          target = null;
+        }
+        apply();
+      } else if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01) {
+        rx += vx; ry += vy;
+        vx *= 0.95; vy *= 0.95;
+        apply();
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  $('seeThrough').addEventListener('click', () => document.body.classList.toggle('see-through'));
+  $('resetView').addEventListener('click', () => turnTo(0, 0, 1));
+
+  // 最初は前面だけブラウザにしておく (最初の斜めの向きを保つため openFace は使わない)
+  makeBrowser(box.querySelector('.front')).addTab(createTab());
+  apply();
+  tick();
+})();
+</script>
+</body>
+</html>

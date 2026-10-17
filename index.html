@@ -175,6 +175,7 @@
     margin: 0 8px 8px; border-radius: 6px;
     background: #fff; overflow: hidden;
     cursor: auto;
+    container-type: inline-size;  /* ページ側で表示幅に応じてレイアウトを変えるため */
   }
   /* タブごとの表示領域。切り替えても iframe の状態が残るよう、隠すだけにする */
   .viewport { position: absolute; inset: 0; }
@@ -251,12 +252,128 @@
   #controls button:hover { background: rgba(255,255,255,.16); }
   body.see-through #seeThrough { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-  /* hint */
-  #hint {
-    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-    color: rgba(255,255,255,.55); font-size: 12px; pointer-events: none;
-    white-space: nowrap;
+  /* ---------- about:horror ---------- */
+  .horror { position: absolute; inset: 0; overflow: hidden; background: #0b0c0e; color: #ddd; }
+  .h-room {
+    position: absolute; inset: 0; opacity: 0; transition: opacity .6s;
+    background: linear-gradient(#15171b 0 58%, #23262c 58% 100%);
   }
+  .h-noise {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    image-rendering: pixelated; opacity: 0; transition: opacity .15s; pointer-events: none;
+  }
+  /* 這ってくる幽霊 (正面から見た四つんばい) */
+  .h-ghost {
+    position: absolute; left: 50%; bottom: 40%; width: 300px; height: 210px;
+    transform-origin: 50% 100%; opacity: 0;
+  }
+  .crawl-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .crawl-svg .arm { transform-box: fill-box; transform-origin: 50% 0; transition: transform .14s steps(2); }
+  .crawl-svg.a .arm-r, .crawl-svg.b .arm-l { transform: translateY(-14px) scale(1.05); }
+  .crawl-svg.no-l .arm-l, .crawl-svg.no-r .arm-r { opacity: 0; }
+  .crawl-svg .smile { opacity: 0; }
+  .crawl-svg.happy .eye { opacity: 0; }
+  .crawl-svg.happy .smile { opacity: 1; }
+  .crawl-svg.wave .arm-r { animation: h-wave .3s steps(2) infinite alternate; }
+  @keyframes h-wave { to { transform: translateY(-40px) rotate(-25deg); } }
+  .horror.flicker { animation: h-flicker .12s steps(2) 1; }
+  @keyframes h-flicker { 50% { filter: brightness(2.2) contrast(1.4); } }
+  .h-end {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; background: #fbf7f2; color: #555;
+  }
+  .h-end[hidden] { display: none; }
+  .h-end-flower { width: 60px; }
+  .h-end p { margin: 0; font-size: 18px; letter-spacing: .2em; }
+  .h-replay {
+    border: 1px solid #dde0e6; background: #fff; border-radius: 999px;
+    padding: 6px 16px; font-size: 13px; cursor: pointer;
+  }
+
+  /* 面の外に出てくる手 (箱の中に 3D で置く) */
+  .grip3d, .arm3d { position: absolute; pointer-events: none; }
+  .grip3d { width: 150px; height: 140px; }
+  .arm3d { width: 200px; height: 270px; }
+  .grip3d svg, .arm3d svg { display: block; width: 100%; height: 100%; }
+  #scene.shake { animation: h-shake .2s steps(2) 2; }
+  @keyframes h-shake { 50% { translate: 6px -4px; } }
+
+  /* こちらへ迫ってくる大きな手 → 花 */
+  .horror-overlay {
+    position: fixed; inset: 0; z-index: 50; overflow: hidden; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 60%, rgba(0,0,0,.25), rgba(0,0,0,.9));
+    opacity: 0; transition: opacity .35s;
+  }
+  .horror-overlay.show { opacity: 1; }
+  .ho-hand {
+    position: absolute; left: 50%; bottom: -12vh; height: 70vh; aspect-ratio: 200 / 270;
+    transform-origin: 50% 100%; transform: translateX(-50%) scale(.45);
+  }
+  .ho-hand svg { display: block; width: 100%; height: 100%; }
+  .ho-hand .fingers { transform-box: view-box; transform-origin: 50% 60%; }
+  .ho-hand.twitch .fingers { animation: h-twitch .16s steps(2) 6; }
+  @keyframes h-twitch { 50% { transform: rotate(3deg) scale(1.03); } }
+  .ho-hand.leave { transition: transform .8s ease-in; transform: translateX(-50%) scale(.2) !important; }
+  .ho-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  .pop .ho-flash { animation: h-flash .4s ease-out; }
+  @keyframes h-flash { 15% { opacity: .9; } 100% { opacity: 0; } }
+  .ho-flower {
+    position: absolute; left: 50%; top: 38vh; width: 18vh;
+    transform: translateX(-50%) scale(0) rotate(-25deg);
+    transition: transform .45s cubic-bezier(.3, 1.7, .5, 1);
+  }
+  .pop .ho-flower { transform: translateX(-50%) scale(1) rotate(0); }
+  /* 白い手や背景に重なっても読めるよう暗い下地を付ける */
+  .ho-msg {
+    position: absolute; left: 50%; bottom: 5vh; transform: translateX(-50%);
+    padding: .6vh 2.4vh; border-radius: 999px; background: rgba(20,20,24,.78);
+    color: #fff; font-size: 3vh; letter-spacing: .1em; white-space: nowrap;
+    opacity: 0; transition: opacity .5s .4s;
+  }
+  .pop .ho-msg { opacity: 1; }
+  .ho-hearts span {
+    position: absolute; left: 50%; top: 36vh; color: #ff7aa8; font-size: 4vh; opacity: 0;
+  }
+  .pop .ho-hearts span { animation: h-heart 1.8s ease-out forwards; }
+  .pop .ho-hearts span:nth-child(2) { animation-delay: .3s; margin-left: -10vh; }
+  .pop .ho-hearts span:nth-child(3) { animation-delay: .6s; margin-left: 9vh; }
+  @keyframes h-heart {
+    0% { opacity: 0; transform: translateY(0) scale(.6); }
+    20% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-22vh) scale(1.2); }
+  }
+  .souvenir {
+    position: fixed; left: 16px; bottom: 10px; z-index: 20; width: 34px; padding: 0;
+    border: 0; background: none; cursor: pointer;
+  }
+  .souvenir svg { display: block; width: 100%; }
+
+  /* ---------- about:info ---------- */
+  /* パソコンのページ部分 (約 940×500px) に 1 画面で収まるよう 2 段組みにする */
+  .info {
+    max-width: 900px; margin: 0 auto; padding: 22px 28px 18px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 36px;
+    font-size: 13px; line-height: 1.6; color: var(--text);
+  }
+  .info header, .info footer { grid-column: 1 / -1; }
+  .info h1 { margin: 0 0 4px; font-size: 22px; }
+  .info h1 span { color: var(--accent); }
+  .info h2 {
+    margin: 14px 0 6px; padding-bottom: 2px; font-size: 14px;
+    border-bottom: 1px solid #e4e6eb;
+  }
+  .info p, .info ul { margin: 0; }
+  .info ul { padding-left: 1.3em; }
+  .info dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+  .info dt { font-weight: 600; }
+  .info dd { margin: 0; color: #444; }
+  .info a { color: var(--accent); }
+  .info footer {
+    margin-top: 16px; padding-top: 8px; border-top: 1px solid #e4e6eb;
+    color: var(--muted); font-size: 12px;
+  }
+  /* 幅の狭いブラウザ (側面など) では 1 段にする */
+  @container (max-width: 640px) { .info { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -274,7 +391,6 @@
   <button id="resetView" title="向きと大きさを正面に戻す">リセット</button>
   <button id="seeThrough" title="面を半透明にして反対側を透かして見る">透過</button>
 </div>
-<div id="hint">枠や背景をドラッグで回転 ・ どの面もクリックでブラウザ (赤丸で閉じる) ・ タブはドラッグで側面へ移動 ・ 画面外でホイール (または Ctrl+ホイール) で拡大縮小 ・ ダブルクリックで元に戻る</div>
 
 <script>
 (() => {
@@ -288,7 +404,6 @@
   // このサイト自身を開くと入れ子になる。ブラウザは祖先と同じ URL の iframe を
   // 読み込まないので、階層ごとに ?depth= を変えて別の URL にする
   const depth = Number(new URLSearchParams(location.search).get('depth')) || 0;
-  if (depth > 0) $('hint').hidden = true;  // 操作説明は一番外側だけに出す
   function selfUrl(d) {
     const u = new URL(location.href);
     u.search = `?depth=${d}`;
@@ -337,10 +452,16 @@
     tab.browser?.sync(tab);
   }
 
+  // アドレスバーで開ける内蔵ページ
+  // about:this はこのサイト自身 (入れ子になる)
+  const INTERNAL = {
+    'about:this': 'self', 'about:draw': 'draw', 'about:horror': 'horror', 'about:info': 'info',
+  };
+
   function navigate(tab, input, push = true) {
     const s = input.trim();
     if (!s) return;
-    const entry = s === 'about:draw' ? { type: 'draw' }
+    const entry = INTERNAL[s] ? { type: INTERNAL[s] }
       : isUrl(s) ? { type: 'url', value: /^(https?|file):\/\//i.test(s) ? s : 'https://' + s }
       : { type: 'search', value: s };
     if (push) {
@@ -356,6 +477,9 @@
     tab.pane.innerHTML = '';
     if (!entry) renderStart(tab);
     else if (entry.type === 'draw') renderDraw(tab);
+    else if (entry.type === 'horror') renderHorror(tab);
+    else if (entry.type === 'self') renderSelf(tab);
+    else if (entry.type === 'info') renderInfo(tab);
     else if (entry.type === 'url') renderUrl(tab, entry.value);
     else renderSearch(tab, entry.value);
     tab.browser?.sync(tab);
@@ -370,16 +494,14 @@
         <h1>3D <span>Browser</span></h1>
         <p>検索語を入れると Wikipedia を検索、URL を入れるとそのサイトを表示します</p>
         <div class="chips">
-          <button data-self>3D Browser</button>
-          ${[['ケノン脱毛', 'https://ケノン.com/'],
-             ['cantic.org', 'https://www.cantic.org/%E4%BD%9C%E3%81%A3%E3%81%9F%E3%82%A2%E3%83%97%E3%83%AA'],
-             ['zoomquilt', 'https://zoomquilt.org/'], ['お絵描き', 'about:draw']]
+          ${[['東京タワー'], ['3D Browser', 'about:this'], ['ケノン脱毛', 'https://ケノン.com/'],
+             ['zoomquilt', 'https://zoomquilt.org/'], ['earthcam', 'https://www.earthcam.com/'],
+             ['お絵描き', 'about:draw'], ['ホラー', 'about:horror'], ['説明', 'about:info']]
             .map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('')}
         </div>
       </div>`;
     page.querySelectorAll('[data-q]').forEach((b) =>
       b.addEventListener('click', () => navigate(tab, b.dataset.q)));
-    page.querySelector('[data-self]').addEventListener('click', () => navigate(tab, selfUrl(depth + 1)));
     tab.pane.appendChild(page);
   }
 
@@ -438,6 +560,339 @@
     const end = () => { last = null; };
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
+  }
+
+  // ---------- about:horror ----------
+  // 長い黒髪の幽霊が地面を這って近づき、画面の縁をつかんで手を伸ばしてくる……と思ったら花をくれる
+  const SKIN = 'fill="#e6e2d9" stroke="#b9b5ab" stroke-width="2"';
+
+  // 正面から見た四つんばいの姿。arm-r が画面の左 (幽霊の右手)、arm-l が画面の右 (幽霊の左手)
+  const CRAWL_SVG = `
+    <svg viewBox="0 0 300 210" class="crawl-svg" aria-hidden="true">
+      <ellipse cx="150" cy="92" rx="74" ry="38" fill="#ecebe6" stroke="#b9b5ab" stroke-width="2"/>
+      <g class="arm arm-r">
+        <path d="M96 96 Q70 140 62 186" stroke="#d6d3cb" stroke-width="16" fill="none" stroke-linecap="round"/>
+        <g ${SKIN}><ellipse cx="50" cy="203" rx="4" ry="7"/><ellipse cx="58" cy="205" rx="4" ry="7"/>
+          <ellipse cx="66" cy="205" rx="4" ry="7"/><ellipse cx="74" cy="203" rx="4" ry="7"/>
+          <ellipse cx="62" cy="193" rx="18" ry="10"/></g>
+      </g>
+      <g class="arm arm-l">
+        <path d="M204 96 Q230 140 238 186" stroke="#d6d3cb" stroke-width="16" fill="none" stroke-linecap="round"/>
+        <g ${SKIN}><ellipse cx="226" cy="203" rx="4" ry="7"/><ellipse cx="234" cy="205" rx="4" ry="7"/>
+          <ellipse cx="242" cy="205" rx="4" ry="7"/><ellipse cx="250" cy="203" rx="4" ry="7"/>
+          <ellipse cx="238" cy="193" rx="18" ry="10"/></g>
+      </g>
+      <path d="M100 72 Q100 22 150 22 Q200 22 200 72 Q214 122 222 196 Q208 206 196 194 Q186 208 174 195
+               Q162 209 150 196 Q138 209 126 195 Q114 208 104 194 Q92 206 78 196 Q86 122 100 72 Z" fill="#131313"/>
+      <g stroke="#2b2b2b" stroke-width="2" fill="none">
+        <path d="M122 40 Q112 120 104 190"/><path d="M150 30 Q150 120 150 194"/><path d="M178 40 Q188 120 196 190"/>
+      </g>
+      <g class="eye"><ellipse cx="166" cy="96" rx="9" ry="6" fill="#f2efe6"/><circle cx="167" cy="96" r="3" fill="#111"/></g>
+      <g class="smile">
+        <path d="M158 98 Q166 89 174 98" stroke="#f2efe6" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <ellipse cx="146" cy="110" rx="7" ry="4" fill="#f3a3b5" opacity=".85"/>
+        <ellipse cx="184" cy="110" rx="7" ry="4" fill="#f3a3b5" opacity=".85"/>
+      </g>
+    </svg>`;
+
+  // 指を広げてこちらに伸ばしてくる手 (指先が上)
+  const HAND_SVG = `
+    <svg viewBox="0 0 200 270" aria-hidden="true"><g ${SKIN}>
+      <rect x="72" y="180" width="58" height="95" rx="22"/>
+      <g class="fingers">
+        <rect x="-10" y="-84" width="20" height="90" rx="10" transform="translate(74 138) rotate(-20)"/>
+        <rect x="-10" y="-96" width="20" height="100" rx="10" transform="translate(94 130) rotate(-7)"/>
+        <rect x="-10" y="-92" width="20" height="96" rx="10" transform="translate(114 130) rotate(6)"/>
+        <rect x="-10" y="-76" width="20" height="80" rx="10" transform="translate(133 138) rotate(19)"/>
+        <rect x="-11" y="-62" width="22" height="66" rx="11" transform="translate(56 178) rotate(-58)"/>
+      </g>
+      <ellipse cx="102" cy="168" rx="50" ry="48"/>
+    </g></svg>`;
+
+  // 画面の縁をつかむ手 (手の甲が上、指が縁にかかって下に垂れる)
+  const GRIP_SVG = `
+    <svg viewBox="0 0 160 150" aria-hidden="true"><g ${SKIN}>
+      <rect x="30" y="40" width="22" height="92" rx="11" transform="rotate(8 41 40)"/>
+      <rect x="54" y="44" width="22" height="104" rx="11" transform="rotate(3 65 44)"/>
+      <rect x="78" y="44" width="22" height="100" rx="11" transform="rotate(-2 89 44)"/>
+      <rect x="102" y="40" width="20" height="84" rx="10" transform="rotate(-8 112 40)"/>
+      <ellipse cx="78" cy="40" rx="58" ry="34"/>
+    </g></svg>`;
+
+  const FLOWER_SVG = `
+    <svg viewBox="0 0 60 120" aria-hidden="true">
+      <path d="M30 50 Q27 85 30 118" stroke="#3a8f3a" stroke-width="4" fill="none"/>
+      <path d="M30 86 Q14 74 11 88 Q22 96 30 91" fill="#4caf50"/>
+      <g fill="#ff7aa8"><circle cx="30" cy="22" r="11"/><circle cx="18" cy="34" r="11"/>
+        <circle cx="42" cy="34" r="11"/><circle cx="23" cy="48" r="11"/><circle cx="37" cy="48" r="11"/></g>
+      <circle cx="30" cy="37" r="7" fill="#ffd54f"/>
+    </svg>`;
+
+  const STOP = Symbol('stop');
+  let horrorBusy = false;  // 画面いっぱいの演出は同時に 1 つだけ
+
+  function renderHorror(tab) {
+    setMeta(tab, 'ホラー', 'about:horror');
+    const page = document.createElement('div');
+    page.className = 'horror';
+    page.innerHTML = `
+      <div class="h-room"></div>
+      <canvas class="h-noise" width="160" height="100"></canvas>
+      <div class="h-ghost">${CRAWL_SVG}</div>
+      <div class="h-end" hidden>
+        <div class="h-end-flower">${FLOWER_SVG}</div>
+        <p>おしまい</p>
+        <button class="h-replay">もう一度</button>
+      </div>`;
+    page.querySelector('.h-replay').addEventListener('click', () => render(tab));
+    tab.pane.appendChild(page);
+    playHorror(tab, page);
+  }
+
+  // 砂嵐。opacity で強さを変える
+  function startNoise(canvas, alive) {
+    const g = canvas.getContext('2d');
+    const img = g.createImageData(canvas.width, canvas.height);
+    (function draw() {
+      if (!alive()) return;
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = Math.random() * 255;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+        img.data[i + 3] = 255;
+      }
+      g.putImageData(img, 0, 0);
+      requestAnimationFrame(draw);
+    })();
+  }
+
+  // 面の上の点 (面の左上からの座標 x, y) に要素を置き、面から z だけ手前に出す。
+  // 面と同じ変形を使うため、変形の中心を面の中心にそろえる
+  function place3d(el, face, x, y, z) {
+    const left = face.offsetLeft + x - el.offsetWidth / 2;
+    const top = face.offsetTop + y - el.offsetHeight / 2;
+    const m = getComputedStyle(face).transform;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.transformOrigin =
+      `${face.offsetLeft + face.offsetWidth / 2 - left}px ${face.offsetTop + face.offsetHeight / 2 - top}px`;
+    el.style.transform = `${m === 'none' ? '' : m} translateZ(${z}px)`;
+  }
+
+  async function playHorror(tab, page) {
+    const q = (s) => page.querySelector(s);
+    const noise = q('.h-noise'), room = q('.h-room'), ghost = q('.h-ghost'), svg = q('.crawl-svg');
+    const temps = [];  // 面の外に出した要素 (最後に片付ける)
+    let skipped = false;
+    const alive = () => !skipped && page.parentNode === tab.pane;
+    // 一定時間待つ。途中でページが閉じられたり Esc が押されたら中断する
+    let wake = null;
+    const step = (ms) => new Promise((resolve, reject) => {
+      const id = setTimeout(() => { wake = null; alive() ? resolve() : reject(STOP); }, ms);
+      wake = () => { clearTimeout(id); wake = null; reject(STOP); };
+    });
+    const onKey = (e) => { if (e.key === 'Escape') { skipped = true; wake?.(); } };
+    addEventListener('keydown', onKey);
+    startNoise(noise, () => page.parentNode === tab.pane && !page.classList.contains('done'));
+    const shake = () => { scene.classList.remove('shake'); void scene.offsetWidth; scene.classList.add('shake'); };
+    const add3d = (cls, html) => {
+      const el = document.createElement('div');
+      el.className = cls;
+      el.innerHTML = html;
+      tab.browser.face.parentElement.appendChild(el);
+      temps.push(el);
+      return el;
+    };
+    // 這う姿の位置と大きさ (t: 0 = 遠く, 1 = 目の前)
+    const pose = (t, jitter = 0) => {
+      ghost.style.bottom = `${40 - t * 48}%`;
+      ghost.style.transform = `translateX(-50%) scale(${0.14 + t * 2.06}) rotate(${jitter}deg)`;
+    };
+    let ownsOverlay = false;
+
+    try {
+      // 1. 砂嵐とちらつき
+      noise.style.opacity = 1;
+      await step(1200);
+      noise.style.opacity = 0.12;
+      room.style.opacity = 1;
+      ghost.style.opacity = 1;
+
+      // 2. 左右の手を交互に出しながら、地面を這って近づいてくる
+      const N = 14;
+      for (let i = 0; i < N; i++) {
+        svg.classList.toggle('a', i % 2 === 0);
+        svg.classList.toggle('b', i % 2 === 1);
+        pose(i / (N - 1), (Math.random() - 0.5) * 5);
+        if (i % 5 === 4) {  // ときどき砂嵐が強くなる
+          noise.style.opacity = 0.6;
+          page.classList.add('flicker');
+          await step(120);
+          noise.style.opacity = 0.12;
+          page.classList.remove('flicker');
+        }
+        await step(420);
+      }
+      svg.classList.remove('a', 'b');
+      await step(700);  // 目の前で止まる
+
+      // 3. 左手 (画面の右) で画面の縁をつかむ
+      const face = tab.browser.face;
+      const fw = face.offsetWidth, fh = face.offsetHeight;
+      svg.classList.add('no-l');
+      const grip = add3d('grip3d', GRIP_SVG);
+      place3d(grip, face, fw * 0.7, fh - 22, 6);
+      shake();
+      await step(900);
+
+      // 4. 右手 (画面の左) が面から 3D 空間へ伸びてくる
+      svg.classList.add('no-r');
+      const arm = add3d('arm3d', HAND_SVG);
+      for (let i = 0; i <= 5; i++) {
+        place3d(arm, face, fw * 0.32, fh * 0.7, 20 + i * 100);
+        arm.firstElementChild.style.transform = `rotate(${i % 2 ? -7 : 7}deg)`;
+        await step(190);
+      }
+
+      // 5. 大きな手が画面いっぱいに迫る → 6. パッと花が出る
+      if (!horrorBusy) {
+        horrorBusy = ownsOverlay = true;
+        const ov = document.createElement('div');
+        ov.className = 'horror-overlay';
+        ov.innerHTML = `
+          <div class="ho-hand">${HAND_SVG}</div>
+          <div class="ho-flash"></div>
+          <div class="ho-flower">${FLOWER_SVG}</div>
+          <div class="ho-hearts"><span>♥</span><span>♥</span><span>♥</span></div>
+          <div class="ho-msg">いつも見てくれてありがとう</div>`;
+        document.body.appendChild(ov);
+        temps.push(ov);
+        arm.style.opacity = 0;
+        const hand = ov.querySelector('.ho-hand');
+        await step(30);
+        ov.classList.add('show');
+        for (let i = 0; i < 6; i++) {
+          hand.style.transform = `translateX(-50%) scale(${0.45 + i * 0.21}) rotate(${i % 2 ? -4 : 4}deg)`;
+          await step(250);
+        }
+        hand.classList.add('twitch');  // つかもうとして指がぴくぴく
+        await step(1000);
+        hand.classList.remove('twitch');
+        ov.classList.add('pop');
+        svg.classList.add('happy');
+        await step(2800);
+        // 7. 手を引っ込めて帰っていく
+        hand.classList.add('leave');
+        ov.classList.remove('show');
+        await step(800);
+        ov.remove();
+        horrorBusy = ownsOverlay = false;
+        arm.style.opacity = 1;
+        souvenir();
+      } else {
+        svg.classList.add('happy');
+      }
+      for (let i = 5; i >= 0; i--) {
+        place3d(arm, face, fw * 0.32, fh * 0.7, 20 + i * 100);
+        await step(130);
+      }
+      arm.remove();
+      grip.remove();
+      svg.classList.remove('no-l', 'no-r');
+
+      // にっこりして右手を振り、後ずさりして消える
+      svg.classList.add('wave');
+      await step(1300);
+      svg.classList.remove('wave');
+      for (let i = 0; i < 8; i++) {
+        svg.classList.toggle('a', i % 2 === 0);
+        svg.classList.toggle('b', i % 2 === 1);
+        pose(1 - (i + 1) / 9);
+        await step(220);
+      }
+      ghost.style.opacity = 0;
+      noise.style.opacity = 0.5;
+      await step(400);
+    } catch (e) {
+      if (e !== STOP) throw e;
+    } finally {
+      removeEventListener('keydown', onKey);
+      for (const el of temps) el.remove();
+      scene.classList.remove('shake');
+      if (ownsOverlay) horrorBusy = false;
+    }
+    // 終わり (Esc で飛ばしたときもここ)
+    if (page.parentNode !== tab.pane) return;
+    page.classList.add('done');  // 砂嵐の描画も止める
+    noise.style.opacity = 0;
+    room.style.opacity = 0;
+    ghost.style.opacity = 0;
+    q('.h-end').hidden = false;
+  }
+
+  // 画面の隅に残る花。クリックで片付ける
+  function souvenir() {
+    if (document.querySelector('.souvenir')) return;
+    const s = document.createElement('button');
+    s.className = 'souvenir';
+    s.title = 'もらった花 (クリックで片付ける)';
+    s.innerHTML = FLOWER_SVG;
+    s.addEventListener('click', () => s.remove());
+    document.body.appendChild(s);
+  }
+
+  // ---------- about:info ----------
+  function renderInfo(tab) {
+    setMeta(tab, '3D Browser について', 'about:info');
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = `
+      <article class="info">
+        <header>
+          <h1>3D <span>Browser</span> について</h1>
+          <p>ネットで一部話題になってた、超縦長のケノン脱毛のサイトからひらめいて作りました。</p>
+        </header>
+        <section>
+          <h2>操作方法</h2>
+          <dl>
+            <dt>回す</dt><dd>ブラウザの枠 (タブバーの空いている所など) か背景をドラッグ</dd>
+            <dt>拡大・縮小</dt><dd>画面の外でホイール、または Ctrl + ホイール</dd>
+            <dt>元に戻す</dt><dd>右下の「リセット」か、背景をダブルクリック</dd>
+            <dt>面を開く</dt><dd>閉じている面 (側面・背面) をクリックでブラウザに</dd>
+            <dt>面を閉じる</dt><dd>左上の赤い丸</dd>
+            <dt>タブ</dt><dd>「+」で追加。ドラッグで別の面へ移動できる</dd>
+            <dt>透過</dt><dd>右下の「透過」で、反対側の面が透けて見える</dd>
+          </dl>
+        </section>
+        <section>
+          <h2>こんなページも開けます</h2>
+          <dl>
+            <dt><a href="#" data-q="about:this">about:this</a></dt><dd>この 3D Browser 自身 (ブラウザの中のブラウザの中の…)</dd>
+            <dt><a href="#" data-q="about:draw">about:draw</a></dt><dd>お絵描き</dd>
+            <dt><a href="#" data-q="about:horror">about:horror</a></dt><dd>ちょっと怖い? (Esc でスキップ)</dd>
+            <dt><a href="#" data-q="about:info">about:info</a></dt><dd>このページ</dd>
+          </dl>
+          <h2>注意</h2>
+          <ul>
+            <li>iframe を使っているため、埋め込みを拒否している多くのサイト (Google、X など) は中に表示されません。</li>
+            <li>中に表示されるサイトの内容は、それぞれのサイトのものです。</li>
+          </ul>
+        </section>
+        <footer>
+          MIT License ・ 2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
+        </footer>
+      </article>`;
+    // about: のリンクはこのタブの中で開く
+    page.querySelectorAll('a[data-q]').forEach((a) => a.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigate(tab, a.dataset.q);
+    }));
+    tab.pane.appendChild(page);
+  }
+
+  // 自分自身を 1 段深い階層として開く。アドレスバーには長いファイルのパスではなく about:this と出す
+  function renderSelf(tab) {
+    renderUrl(tab, selfUrl(depth + 1));
+    setMeta(tab, '3D Browser', 'about:this');
   }
 
   function renderUrl(tab, url) {

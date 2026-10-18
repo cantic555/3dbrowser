@@ -1217,7 +1217,13 @@
   // 平行回転は指定しなければ 0° (まっすぐ) に戻す
   // 操作パネルのロックを外す (操作パネルの処理は後ろで定義されるが、呼ばれるのは起動後の操作のときだけ)
   function stopRollLatch() { roll.setLatch(0); }
-  function stopZoomLatch() { zoomer.setLatch(0); }
+  // ほかの操作 (ピンチ・ホイール・リセットなど) で外すときは、すぐに範囲の中へ戻す
+  function stopZoomLatch() {
+    zoomer.setLatch(0);
+    zoomReturn = false;
+    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+    scene.style.opacity = '';
+  }
   function stopLatches() { stopRollLatch(); stopZoomLatch(); stopStickLatch(); }
   function turnTo(trx, try_, tzoom, trz = 0) {
     // 向きを目標へ動かすので、スティックのロックは外す (大きさも動かすなら ＋/− のロックも)
@@ -1727,25 +1733,33 @@
   // ＋/− (1 秒あたり大きさが e^速さ 倍)
   const zoomer = holdGroup({ '1': pad.querySelector('.zoom-in'), '-1': pad.querySelector('.zoom-out') }, [0.3, 0.6, 1.0]);
   // ＋/− のロックはループする: 極大を越えて近づきながら消え、極小より遠くから現れてまた近づく (− は逆向き)
-  const ZOOM_MIN = 0.15, ZOOM_MAX = 2.5, ZOOM_OVER = 1.6;  // ZOOM_OVER: 範囲の外で消えていく・現れる幅 (倍率)
-  function zoomLoop(dt) {
-    const lo = ZOOM_MIN / ZOOM_OVER, hi = ZOOM_MAX * ZOOM_OVER;
-    zoom *= Math.exp(zoomer.latch * zoomer.speed * dt);
-    if (zoom > hi) zoom = lo * zoom / hi;   // 突き抜けたら、遠くから出直す
-    if (zoom < lo) zoom = hi * zoom / lo;
-    // 範囲の外では薄くする (端で 0)
-    const k = Math.log(ZOOM_OVER);
-    const fade = zoom > ZOOM_MAX ? 1 - Math.log(zoom / ZOOM_MAX) / k
-      : zoom < ZOOM_MIN ? 1 - Math.log(ZOOM_MIN / zoom) / k : 1;
+  // 手で拡大縮小できる範囲。ループのときだけ、その外 (LOOP_LO〜LOOP_HI) まで行く。
+  // 遠い側は FADE_LO (点のような大きさ) まで小さくなってから消え、近い側は ZOOM_MAX を越えたら消えていく
+  const ZOOM_MIN = 0.15, ZOOM_MAX = 2.5;
+  const LOOP_LO = 0.01, FADE_LO = 0.03, LOOP_HI = 4;
+  let zoomReturn = false;     // ループを止めたあと、範囲の中へなめらかに戻っている途中
+  function zoomFade() {
+    const fade = zoom > ZOOM_MAX ? 1 - Math.log(zoom / ZOOM_MAX) / Math.log(LOOP_HI / ZOOM_MAX)
+      : zoom < FADE_LO ? 1 - Math.log(FADE_LO / zoom) / Math.log(FADE_LO / LOOP_LO) : 1;
     scene.style.opacity = fade < 1 ? Math.max(0, fade).toFixed(3) : '';
   }
-  // ロックを外したら、範囲の外にいれば中に戻して、薄くしたのも戻す
+  function zoomLoop(dt) {
+    zoom *= Math.exp(zoomer.latch * zoomer.speed * dt);
+    if (zoom > LOOP_HI) zoom = LOOP_LO * zoom / LOOP_HI;   // 突き抜けたら、遠くから出直す
+    if (zoom < LOOP_LO) zoom = LOOP_HI * zoom / LOOP_LO;
+    zoomFade();
+  }
+  // ボタンでループを止めたら、範囲の外にいれば中へなめらかに戻す
   zoomer.onLatch = (dir) => {
-    if (dir) return;
-    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
-    scene.style.opacity = '';
-    apply();
+    if (!dir) zoomReturn = zoom < ZOOM_MIN || zoom > ZOOM_MAX;
   };
+  function zoomBack(dt) {
+    const to = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+    const d = Math.log(to / zoom);
+    if (Math.abs(d) < 0.005) { zoom = to; zoomReturn = false; }
+    else zoom *= Math.exp(d * Math.min(1, dt * 4));
+    zoomFade();
+  }
 
   let lastPadT = performance.now();
   const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomer.dir || roll.dir;
@@ -1781,6 +1795,9 @@
       apply();
     } else if (zoomer.latch) {
       zoomLoop(dt);
+      apply();
+    } else if (zoomReturn) {
+      zoomBack(dt);
       apply();
     }
   }

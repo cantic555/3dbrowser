@@ -38,7 +38,8 @@
     pokeWords: [['ひゃっ', 'なに？', 'くすぐったい', '！', 'やめて〜', 'えへへ'],
       ['Eep!', 'What?', 'That tickles', '!', 'Stop it~', 'Hehe']],
     liftWords: [['わっ', 'はなして〜'], ['Whoa!', 'Put me down~']],
-    linesClear: ['線を全部消す (1 本だけ消すときは線をタップ)', 'Clear all lines (tap a line to remove just that one)'],
+    linesClear: ['線を全部消す (1 本だけ消すときは線をダブルクリック)', 'Clear all lines (double-click a line to remove just that one)'],
+    lineTip: ['ドラッグで移動・ダブルクリックで消す', 'Drag to move, double-click to remove'],
     infoKobito: ['小人が暮らしている。回すとあたふたする。線を引くとその上を歩く', 'Tiny Folks live here. Rotate and watch them panic. Draw lines for them to walk on'],
   };
 
@@ -300,6 +301,7 @@
         }
         p.grounded = upright && !!ground;
         p.groundN = p.grounded ? ground : null;
+        p.groundLine = p.grounded ? ground[2] : null;  // 立っている線 (地面や壁なら undefined)
         if (p.grounded) {
           // 地面の摩擦で踏ん張る。坂がきついと踏ん張りきれずにずるずる滑る。
           // 転がっている間も少しずつ止まる (摩擦がないと、仲間に押し返されたまま永遠に回り続ける)
@@ -551,8 +553,21 @@
       if (e.button !== 0) return;
       const p = hit(e.offsetX, e.offsetY);
       canvas.setPointerCapture(e.pointerId);
-      if (!p) {  // 何もない所: 線を引き始める
-        stroke = [[e.offsetX, e.offsetY]];
+      if (!p) {
+        const l = lineAt(e.offsetX, e.offsetY);
+        if (l) {  // 線の上: ダブルクリック (スマホはダブルタップ) なら消す、ドラッグなら動かす
+          const now = performance.now();
+          if (lastTap && lastTap.line === l && now - lastTap.t < 350) {
+            lastTap = null;
+            removeLine(l);
+            return;
+          }
+          lastTap = { line: l, t: now };
+          lineDrag = { line: l, x: e.offsetX, y: e.offsetY, t: now, moved: false };
+          canvas.style.cursor = 'grabbing';
+          return;
+        }
+        stroke = [[e.offsetX, e.offsetY]];  // 何もない所: 線を引き始める
         return;
       }
       held = { p, x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, moved: false, vx: 0, vy: 0, t: performance.now() };
@@ -563,9 +578,16 @@
         if (Math.hypot(e.offsetX - lx, e.offsetY - ly) >= 3) stroke.push([e.offsetX, e.offsetY]);
         return;
       }
+      if (lineDrag) {
+        moveLine(e.offsetX, e.offsetY);
+        return;
+      }
       if (!held) {
-        // 小人の上はつまむ、線の上は消せる、何もない所は線を引ける
-        canvas.style.cursor = hit(e.offsetX, e.offsetY) ? 'grab' : lineAt(e.offsetX, e.offsetY) ? 'pointer' : '';
+        // 小人の上はつまむ、線の上はつかんで動かせる、何もない所は線を引ける
+        const p = hit(e.offsetX, e.offsetY);
+        hoverLine = p ? null : lineAt(e.offsetX, e.offsetY);
+        canvas.style.cursor = p || hoverLine ? 'grab' : '';
+        canvas.title = hoverLine ? t('lineTip') : '';
         return;
       }
       const { p } = held;
@@ -593,6 +615,12 @@
         if (e.type === 'pointerup') finishStroke(pts);
         return;
       }
+      if (lineDrag) {
+        if (lineDrag.moved) linesChanged();  // 動かした位置を保存する
+        lineDrag = null;
+        canvas.style.cursor = 'grab';
+        return;
+      }
       if (!held) return;
       const { p, moved } = held;
       if (!moved) {
@@ -615,6 +643,7 @@
     };
     canvas.addEventListener('pointerup', release);
     canvas.addEventListener('pointercancel', release);
+    canvas.addEventListener('pointerleave', () => { hoverLine = null; });
 
     // ---------- 引いた線 ----------
     // 何もない所をドラッグすると線を引ける。線は床にも壁にもなり、小人はその上を歩く。
@@ -624,8 +653,14 @@
     let segs = [];            // 当たり判定用の線分 (表示の座標) { ax, ay, dx, dy, len2, line }
     let segsFor = '';         // segs を作ったときの大きさ
     let stroke = null;        // 引いている途中の線 (表示の座標)
+    let lineDrag = null;      // つかんで動かしている線 { line, x, y, t, moved }
+    let hoverLine = null;     // カーソルを合わせている線 (少し青くする)
+    let lastTap = null;       // 直前に線を押したとき (ダブルクリックの判定用) { line, t }
     const fading = [];        // 消えていく線 { pts, t }
-    const saveLines = () => { try { localStorage.setItem(LINES_KEY, JSON.stringify(lines)); } catch {} };
+    const saveLines = () => {
+      const out = lines.map((l) => l.map(([x, y]) => [+x.toFixed(4), +y.toFixed(4)]));
+      try { localStorage.setItem(LINES_KEY, JSON.stringify(out)); } catch {}
+    };
 
     const clearBtn = document.createElement('button');
     clearBtn.className = 'kobito-clear';
@@ -693,21 +728,21 @@
           o.y -= g.y * h;
           const vg = o.vx * g.x + o.vy * g.y;
           if (vg > 0) { o.vx -= g.x * vg; o.vy -= g.y * vg; }
-          contacts?.push([-g.x, -g.y]);
+          contacts?.push([-g.x, -g.y, sg.line]);
           continue;
         }
         o.x += nx * (rr - d);
         o.y += ny * (rr - d);
         const vn = o.vx * nx + o.vy * ny;
         if (vn < 0) { o.vx -= nx * vn * 1.25; o.vy -= ny * vn * 1.25; }
-        contacts?.push([nx, ny]);
+        contacts?.push([nx, ny, sg.line]);
       }
     }
 
-    // (x, y) の近くにある線 (タップで消す用)
+    // (x, y) の近くにある線 (つかむ・消す用)。すぐ横から新しい線を引けるよう、範囲は狭め
     function lineAt(x, y) {
       buildSegs();
-      let found = null, bd = 12;
+      let found = null, bd = 8;
       for (const sg of segs) {
         const [cx, cy] = nearest(sg, x, y);
         const d = Math.hypot(x - cx, y - cy);
@@ -716,21 +751,44 @@
       return found;
     }
 
+    // つかんだ線を (x, y) まで動かす。形はそのままで、枠からははみ出さない。
+    // 線の上に立っている小人は一緒に運ぶ (速く動かしすぎると振り落とされる)
+    function moveLine(x, y) {
+      const d = lineDrag, l = d.line;
+      let dx = x - d.x, dy = y - d.y;
+      if (!d.moved && Math.hypot(dx, dy) < 3) return;
+      d.moved = true;
+      lastTap = null;  // 動かしたらダブルクリックとはみなさない
+      const xs = l.map((pt) => pt[0] * W), ys = l.map((pt) => pt[1] * H);
+      dx = Math.max(-Math.min(...xs), Math.min(W - Math.max(...xs), dx));
+      dy = Math.max(-Math.min(...ys), Math.min(H - Math.max(...ys), dy));
+      for (const pt of l) { pt[0] += dx / W; pt[1] += dy / H; }
+      segsFor = '';  // 当たり判定を作り直す
+      const now = performance.now(), speed = Math.hypot(dx, dy) / Math.max(1, now - d.t) * 1000;
+      for (const p of people) {
+        if (p.groundLine !== l || p.state === 'held') continue;
+        if (speed > 900) {  // 速すぎて振り落とされる
+          p.groundLine = null;
+          continue;
+        }
+        p.x = Math.min(W - KR, Math.max(KR, p.x + dx));
+        p.y = Math.min(H - KR, Math.max(KR, p.y + dy));
+      }
+      d.x += dx; d.y += dy; d.t = now;
+    }
+
     function removeLine(l) {
       lines.splice(lines.indexOf(l), 1);
+      if (hoverLine === l) hoverLine = null;
       fading.push({ pts: l, t: 0 });
       linesChanged();
     }
 
-    // 線を引き終えたとき。短すぎるのはタップとみなして、その場所の線を消す
+    // 線を引き終えたとき。短すぎるのはタップとみなして何もしない
     function finishStroke(pts) {
       let len = 0;
       for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-      if (len < 8) {
-        const l = lineAt(pts[0][0], pts[0][1]);
-        if (l) removeLine(l);
-        return;
-      }
+      if (len < 8) return;
       const simple = simplify(pts, 1.5);
       lines.push(simple.map(([x, y]) => [+(x / W).toFixed(4), +(y / H).toFixed(4)]));
       while (lines.length > MAX_LINES) removeLine(lines[0]);
@@ -764,8 +822,11 @@
       ctx.save();
       ctx.lineCap = ctx.lineJoin = 'round';
       ctx.lineWidth = LINE_W;
+      for (const l of lines) {
+        ctx.strokeStyle = l === lineDrag?.line || l === hoverLine ? '#4a6fd8' : '#5b6170';
+        strokePath(l, true);
+      }
       ctx.strokeStyle = '#5b6170';
-      for (const l of lines) strokePath(l, true);
       // 消えていく線
       for (const fl of [...fading]) {
         fl.t += 1 / 60;

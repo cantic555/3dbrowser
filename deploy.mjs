@@ -15,7 +15,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const dist = join(root, 'dist');
 const FILES = ['index.html', 'LICENSE', 'plugins'];  // 公開するのはこれだけ (snapshot/ などは含めない)
 const dryRun = process.argv.includes('--dry-run');
-const git = (cmd) => execSync(`git ${cmd}`, { cwd: root, encoding: 'utf8' }).trim();
+const git = (cmd) => execSync(`git ${cmd}`, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
 // plugins/ の中身を index.html の読み込みに反映しておく
 execSync('node build-plugins.mjs', { cwd: root, stdio: 'inherit' });
@@ -50,7 +50,7 @@ if (!dryRun) {
   for (let n = 1; ; n++) {
     const tag = n === 1 ? base : `${base}-${n}`;
     let at = null;
-    try { at = git(`rev-parse ${tag}^{commit}`); } catch {}
+    try { at = git(`rev-list -n 1 refs/tags/${tag}`); } catch {}  // タグが無ければエラー (^{commit} は Windows の cmd.exe で ^ が消えるので使わない)
     if (at === head) { console.log(`タグ ${tag} はこのコミットに付いています`); break; }
     if (!at) { git(`tag ${tag}`); console.log(`タグ ${tag} を付けました (GitHub に送るのは push のとき)`); break; }
   }

@@ -269,6 +269,16 @@
     color: rgba(255,255,255,.8); cursor: pointer;
   }
   #controls button:hover { background: rgba(255,255,255,.16); }
+  #controls button { white-space: nowrap; }  /* ボタンの中で文字を折り返さない */
+  /* 幅の狭いスマホでは、1 行に収まるよう余白と文字を詰める */
+  @media (max-width: 420px) {
+    #controls { right: 8px; gap: 5px; }
+    #controls button { padding: 5px 9px; font-size: 11px; }
+  }
+  @media (max-width: 360px) {
+    #controls { right: 6px; gap: 4px; }
+    #controls button { padding: 5px 7px; }
+  }
   body.see-through #seeThrough { background: var(--accent); border-color: var(--accent); color: #fff; }
   #sizeMenu {
     position: fixed; right: 16px; bottom: 48px; z-index: 30; min-width: 220px;

@@ -487,6 +487,11 @@
 
 <script>
 (() => {
+  // バージョン。VERSION は機能を足したときなどに手で上げる (v0.1 → v0.2)。
+  // BUILD は node deploy.mjs が公開用のファイルにだけデプロイした日付 (2026.10.18 など) を書き込む。手元では dev
+  const VERSION = 'v0.1';
+  const BUILD = 'dev';
+
   const W = 960, H = 600;
   const SIDE_W = 400;  // 側面ブラウザの短い辺の長さ。厚みに収まるよう縦横同じ倍率で縮めて表示する
 
@@ -883,6 +888,7 @@
           2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
           ・ <a href="${REPO_URL}/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
           ・ <a href="${REPO_URL}" target="_blank" rel="noopener">${sourceLabel} (GitHub ↗)</a>
+          ・ <span class="version">${VERSION} (${BUILD})</span>
         </footer>`;
   // 開けるページの一覧 (about:this、登録したページ、about:info の順)
   const pageRows = () => [PAGES.get('this'), ...menuPages(), PAGES.get('info')]

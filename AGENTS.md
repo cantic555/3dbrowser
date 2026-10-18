@@ -103,4 +103,10 @@ node deploy.mjs --dry-run  # 確認だけ
 ```
 
 `node build-plugins.mjs` を実行してから、`index.html`・`plugins/`・`LICENSE` を `dist/` に集めて `npx wrangler@4 deploy` する (Worker 名 `3d-browser`、カスタムドメイン `3dbrowser.cantic.org`)。
+コミットしていない変更があると止まる (`--dry-run` は警告だけ)。
 反映の流れ: 変更 → コミット → `git push` → `node deploy.mjs`
+
+### バージョン
+- `index.html` の `const VERSION = 'v0.1'` を手で上げる。機能を足したり大きく変えたりしたら v0.2、v0.3… (細かい修正だけなら上げなくてよい)。
+- `deploy.mjs` が公開用の `dist/index.html` にだけ、デプロイした日付を `BUILD` に書き込む。説明ページの一番下に「v0.1 (2026.10.18)」と出る (手元で開くと「v0.1 (dev)」)。
+- 公開したら、そのコミットにローカルのタグ `v0.1-2026.10.18` を自動で付ける (同じ日の 2 回目は `-2`)。GitHub に送るのは push のとき (`git push origin <タグ名>`)。作業用の `before-…` タグは送らない。

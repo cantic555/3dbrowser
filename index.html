@@ -227,6 +227,8 @@
   }
   .chips button:hover { background: #eef1f8; border-color: #c9d3ee; }
   .chips button.internal { background: #edf2ff; border-color: #cbd8fa; color: #2d4a9e; }
+  /* 外部サイトのボタンには、小さく薄い ↗ を付ける */
+  .chips button:not(.internal)::after { content: '↗'; margin-left: 3px; font-size: .85em; color: #9aa0ab; }
   .chips button.internal:hover { background: #e0e9ff; border-color: #a9bff5; }
 
   /* search results */
@@ -884,7 +886,7 @@
   }
 
   // スタートページのボタン。featured の内蔵ページ (小人) を先頭に、サイトと about:this、残りの内蔵ページの順に並べる
-  // 内蔵ページ (about:…) のボタンは薄い青にして、外部サイトと見分けられるようにする。行き先はツールチップに出す
+  // 内蔵ページ (about:…) のボタンは薄い青、外部サイトには ↗ を付けて見分けられるようにする。行き先はツールチップに出す
   const chips = (list) => list.map(([label, q = label]) =>
     `<button data-q="${q}" title="${escapeHtml(isUrl(q) || q.startsWith('about:') ? q : t('searchTitle', q))}"${q.startsWith('about:') ? ' class="internal"' : ''}>${label}</button>`).join('');
   const pageChips = (defs) => defs.map((d) => [pageTitle(d), `about:${d.id}`]);

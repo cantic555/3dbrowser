@@ -326,22 +326,24 @@
   }
   .stick:not(.active) .knob { transition: transform .18s ease-out; }  /* 離すと中心へ戻る */
   .zoom-btns, .roll-btns { display: flex; flex-direction: column; gap: 8px; }
-  /* ⟲⟳ の長押し: 3 つに区切ったリングが 1 段ずつ伸び、その段の速さで回る。
+  /* ⟲⟳ の長押し: リングがなめらかに伸び、1/3・2/3・一周で速さが 1 段ずつ上がる。
      リングが出ているときに離すと、その速さのままロック (ボタンが青くなる) */
   .roll-btns button { position: relative; }
-  .roll-btns button::before {
+  .roll-btns button::before, .roll-btns button::after {
     content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none;
-    background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), rgba(255,255,255,.25) 0);
-    /* 輪の形 × 3 つの区切り (すき間 8°) */
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px)),
-      repeating-conic-gradient(from 4deg, #000 0 112deg, transparent 112deg 120deg);
-    -webkit-mask-composite: source-in;
-    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px)),
-      repeating-conic-gradient(from 4deg, #000 0 112deg, transparent 112deg 120deg);
-    mask-composite: intersect;
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
     opacity: 0; transition: opacity .15s;
   }
-  .roll-btns button.charging::before { opacity: 1; }
+  .roll-btns button::before {
+    background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), rgba(255,255,255,.18) 0);
+  }
+  /* 速さが変わる位置 (1/3・2/3) の目立たない目盛り */
+  .roll-btns button::after {
+    background: conic-gradient(transparent 0 119deg, rgba(255,255,255,.45) 119deg 121deg,
+      transparent 121deg 239deg, rgba(255,255,255,.45) 239deg 241deg, transparent 241deg);
+  }
+  .roll-btns button.charging::before, .roll-btns button.charging::after { opacity: 1; }
   #pad .roll-btns button.latched { background: var(--accent); border-color: var(--accent); color: #fff; }
   #pad button {
     width: 36px; height: 36px; padding: 0; border-radius: 50%;
@@ -2740,9 +2742,11 @@
       if (stage !== rollStage) {
         rollStage = stage;
         b.classList.toggle('charging', stage > 0);
-        showRing(b, stage / ROLL_STAGES.length);
         navigator.vibrate?.(15);  // 段が上がるたびに軽く振動 (スマホ)
       }
+      // リングは 1/3 の位置から現れて、一周までなめらかに伸びる
+      const n = ROLL_STAGES.length;
+      if (stage) showRing(b, Math.min(1, (1 + (rollHeld - ROLL_STEP) / ROLL_STEP) / n));
       const speed = stage ? ROLL_STAGES[stage - 1] : ROLL_SLOW;
       rz += rollDir * speed * dt;
       vz = 0;  // 離したらその場で止まる (惰性で行き過ぎないように)

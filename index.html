@@ -568,7 +568,7 @@
       'Type a word to search Wikipedia, or a URL to open that site'],
     chipTokyoTower: ['東京タワー', 'Tokyo Tower'],
     chipKenon: ['ケノン脱毛', 'Ke-non'],
-    chipCat: ['猫', 'Cat'],
+    chipCat: ['猫動画', 'Cat video'],
     info: ['説明', 'About'],
     embedNotice: ['表示されない場合、このサイトは埋め込みを拒否しています。',
       "If nothing shows up, this site doesn't allow embedding."],
@@ -860,10 +860,10 @@
         <h1>3D <span>Browser</span></h1>
         <p>${t('startLead')}</p>
         <div class="chips">
-          ${chips([[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
+          ${chips([[t('chipTokyoTower')], [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E'],
+             [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
              ['zoomquilt', 'https://zoomquilt.org/'],
-             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
-             [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E']])}
+             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html']])}
           ${chips([...menuPages().map((d) => [pageTitle(d), `about:${d.id}`]), [t('info'), 'about:info']])}
         </div>
       </div>`;

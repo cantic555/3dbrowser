@@ -1134,7 +1134,7 @@
     q('.close-window').addEventListener('click', onEmpty);  // タブごとブラウザを閉じる
     q('.min-window').addEventListener('click', () => toggleSizeMode('min'));
     q('.max-window').addEventListener('click', () => toggleSizeMode('max'));
-    if (face.classList.contains('front')) addResizeGrip(face);
+    addResizeGrip(face);
     return browser;
   }
 
@@ -1239,24 +1239,29 @@
   // (実際のウィンドウと同じ)。大きさは覚えず、開くたびに元の大きさから始まる
   const MIN_W = 320, MIN_H = 220, MAX_W = 4000, MAX_H = 6000;
   const TALL_W = 420, TALL_H = 2600;  // 超縦長
-  let boxW = W, boxH = H;
+  // 厚み: 元は D0。側面・上下の面のつまみで厚くできる。上限は幅・高さの短いほう (立方体まで)
+  const D0 = 56;
+  let boxW = W, boxH = H, boxD = D0;
   let sizeMode = 'normal', savedSize = null;  // 最大化・最小化の前の大きさ
   let sizeAnim = 0;
 
   function applySize() {
+    boxD = Math.max(D0, Math.min(boxD, boxW, boxH));  // 幅や高さを小さくしたら、厚みも一緒に縮める
     document.documentElement.style.setProperty('--W', `${boxW}px`);
     document.documentElement.style.setProperty('--H', `${boxH}px`);
+    document.documentElement.style.setProperty('--D', `${boxD}px`);
   }
-  // animate: なめらかに変える (約 0.35 秒)
-  function setSize(w, h, animate = false) {
+  // animate: なめらかに変える (約 0.35 秒)。d (厚み) を省くと今の厚みのまま
+  function setSize(w, h, animate = false, d = boxD) {
     w = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
     h = Math.round(Math.min(MAX_H, Math.max(MIN_H, h)));
+    d = Math.round(Math.max(D0, Math.min(d, w, h)));
     cancelAnimationFrame(sizeAnim);
-    if (!animate) { boxW = w; boxH = h; applySize(); return; }
-    const w0 = boxW, h0 = boxH, t0 = performance.now();
+    if (!animate) { boxW = w; boxH = h; boxD = d; applySize(); return; }
+    const w0 = boxW, h0 = boxH, d0 = boxD, t0 = performance.now();
     (function step(now) {
       const k = Math.min(1, (now - t0) / 350), e = 1 - (1 - k) ** 3;
-      boxW = w0 + (w - w0) * e; boxH = h0 + (h - h0) * e;
+      boxW = w0 + (w - w0) * e; boxH = h0 + (h - h0) * e; boxD = d0 + (d - d0) * e;
       applySize();
       if (k < 1) sizeAnim = requestAnimationFrame(step);
     })(t0);
@@ -1330,12 +1335,15 @@
   function resetAll() {
     stopLatches();
     sizeMode = 'normal';
-    setSize(W, H, true);
+    setSize(W, H, true, D0);
     turnTo(0, 0, 1);
   }
 
-  // 右下の角のつまみ。箱を傾けていても、マウスの動きを面の上の動きに直して大きさを変える
+  // 右下の角のつまみ。箱を傾けていても、マウスの動きを面の上の動きに直して大きさを変える。
+  // その面に見えている 2 辺を変える: 正面・背面は幅と高さ、左右の面は厚みと高さ、上下の面は幅と厚み
   function addResizeGrip(face) {
+    const has = (c) => face.classList.contains(c);
+    const axes = has('left') || has('right') ? ['d', 'h'] : has('top') || has('bottom') ? ['w', 'd'] : ['w', 'h'];
     const grip = document.createElement('div');
     grip.className = 'resize-grip';
     grip.dataset.i18nTitle = 'resizeTip';
@@ -1369,7 +1377,10 @@
       if (Math.abs(det) < 1e-3) return;  // 面が真横を向いているときは動かせない
       const u = (dx * ey[1] - dy * ey[0]) / det, v = (ex[0] * dy - ex[1] * dx) / det;
       // 箱は中心を基準に広がるので、角がカーソルについてくるよう 2 倍にする
-      setSize(boxW + u * 2, boxH + v * 2);
+      const size = { w: boxW, h: boxH, d: boxD };
+      size[axes[0]] += u * 2;
+      size[axes[1]] += v * 2;
+      setSize(size.w, size.h, false, size.d);
     });
     const end = () => { last = null; document.body.classList.remove('resizing'); };
     grip.addEventListener('pointerup', end);

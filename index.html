@@ -37,6 +37,10 @@
     cursor: grab;
   }
   body.dragging #scene { cursor: grabbing; }
+  /* 平行回転 (ロール) になる場所では、カーソルを回転の矢印にする (白い矢印に黒い縁取り) */
+  body.roll-zone #scene {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 28 28'%3E%3Cg fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 9A9.5 9.5 0 1 0 23 17' stroke='%23000' stroke-width='5'/%3E%3Cpath d='M22 3v6.5h-6.5' stroke='%23000' stroke-width='5'/%3E%3Cpath d='M22 9A9.5 9.5 0 1 0 23 17' stroke='%23fff' stroke-width='2.2'/%3E%3Cpath d='M22 3v6.5h-6.5' stroke='%23fff' stroke-width='2.2'/%3E%3C/g%3E%3C/svg%3E") 10 10, grab;
+  }
   body.dragging iframe { pointer-events: none; }
   body.dragging { user-select: none; }
 
@@ -279,8 +283,8 @@
     cursor: grab;
   }
   .stick.active { cursor: grabbing; }
-  /* 最初に気づいてもらうため、触るまでふわっと光らせる */
-  #pad.glow .stick { animation: pad-glow 1.6s ease-in-out infinite; }
+  /* 最初に気づいてもらうため、触るか 10 秒たつまでふわっと光らせる */
+  #pad.blink .stick { animation: pad-glow 1.6s ease-in-out infinite; }
   @keyframes pad-glow {
     50% { box-shadow: 0 0 0 6px rgba(59,108,246,.35), 0 0 18px rgba(59,108,246,.6); }
   }
@@ -299,7 +303,7 @@
     box-shadow: 0 3px 8px rgba(0,0,0,.45);
   }
   .stick:not(.active) .knob { transition: transform .18s ease-out; }  /* 離すと中心へ戻る */
-  .zoom-btns { display: flex; flex-direction: column; gap: 8px; }
+  .zoom-btns, .roll-btns { display: flex; flex-direction: column; gap: 8px; }
   #pad button {
     width: 36px; height: 36px; padding: 0; border-radius: 50%;
     border: 1px solid rgba(255,255,255,.3); background: rgba(32,35,42,.6);
@@ -317,6 +321,18 @@
     opacity: 0; transition: opacity .4s;
   }
   #padHint.show { opacity: 1; }
+  #rollGuide {
+    position: fixed; left: 50%; top: 50%; z-index: 19; transform: translate(-50%, -50%);
+    border-radius: 50%; border: 2px dashed rgba(255,255,255,.28); pointer-events: none;
+    opacity: 0; transition: opacity .25s;
+  }
+  #rollGuide.show { opacity: 1; }
+  #rollGuide span {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    color: rgba(255,255,255,.45); font-size: 26px;
+  }
+  #rollGuide span:first-child { left: -38px; }
+  #rollGuide span:last-child { right: -38px; }
   #pad[hidden] ~ #padHint { bottom: 60px; }  /* パネルを畳んでいるときは、その分下に出す */
   /* 幅の狭い画面 (スマホ) では、右下のボタンと重ならないよう少し上に置く */
   @media (max-width: 720px) {
@@ -467,6 +483,10 @@
 </div>
 <!-- 操作パネル: スティックを倒した方向に回る (遠くまで倒すほど速い) -->
 <div id="pad" hidden>
+  <div class="roll-btns">
+    <button class="roll-left" data-i18n-title="rollLeft">⟲</button>
+    <button class="roll-right" data-i18n-title="rollRight">⟳</button>
+  </div>
   <div class="stick" data-i18n-title="padTip">
     <span class="arrow a-up">▲</span><span class="arrow a-down">▼</span>
     <span class="arrow a-left">◀</span><span class="arrow a-right">▶</span>
@@ -479,6 +499,8 @@
   <button class="pad-hide" data-i18n-title="hidePad">×</button>
 </div>
 <div id="padHint" data-i18n="dragHint"></div>
+<!-- 平行回転のドラッグ中だけ出す目安の円 (この外側をなぞると平行に回る) -->
+<div id="rollGuide"><span>⟲</span><span>⟳</span></div>
 
 <script>
 (() => {
@@ -530,6 +552,8 @@
     langToggleTip: ['Switch to English', '日本語に切り替える'],
     padTip: ['ドラッグで回転 (遠くまで倒すほど速い)', 'Drag to rotate (the farther, the faster)'],
     zoomIn: ['拡大', 'Zoom in'],
+    rollLeft: ['反時計回りに回す', 'Rotate counterclockwise'],
+    rollRight: ['時計回りに回す', 'Rotate clockwise'],
     zoomOut: ['縮小', 'Zoom out'],
     hidePad: ['操作パネルを隠す', 'Hide the control pad'],
     showPad: ['操作パネルを表示', 'Show the control pad'],
@@ -1188,7 +1212,7 @@
 
   // 面の中での重力の向き。x, y は面の中 (y が面の下向き)、z は面に垂直な成分
   function faceGravity(face) {
-    const m = new DOMMatrix(`rotateX(${rx}deg) rotateY(${ry}deg)`)
+    const m = new DOMMatrix(ROT())
       .multiply(new DOMMatrix(getComputedStyle(face).transform));
     // 画面の下向き (0, 1, 0) を面の座標に戻す。w = 0 なので平行移動は無視される
     const g = m.inverse().transformPoint(new DOMPoint(0, 1, 0, 0));
@@ -1197,7 +1221,7 @@
 
   // 面が見ている人の側を向いているか (裏から見ているときは負になる)
   function faceFacing(face) {
-    const m = new DOMMatrix(`rotateX(${rx}deg) rotateY(${ry}deg)`)
+    const m = new DOMMatrix(ROT())
       .multiply(new DOMMatrix(getComputedStyle(face).transform));
     return m.transformPoint(new DOMPoint(0, 0, 1, 0)).z;
   }
@@ -1851,6 +1875,7 @@
           <h2>操作方法</h2>
           <dl>
             <dt>回す</dt><dd>ブラウザの枠 (タブバーの空いている所など) か背景をドラッグ</dd>
+            <dt>平行に回す</dt><dd>画面の外側の背景を円を描くようにドラッグ、2 本指でひねる、パネルの ⟲ ⟳</dd>
             <dt>拡大・縮小</dt><dd>画面の外でホイール、または Ctrl + ホイール</dd>
             <dt>元に戻す</dt><dd>右下の「リセット」か、背景をダブルクリック</dd>
             <dt>面を開く</dt><dd>閉じている面 (側面・背面) をクリックでブラウザに</dd>
@@ -1885,6 +1910,7 @@
           <h2>How to use</h2>
           <dl>
             <dt>Rotate</dt><dd>Drag the browser frame (e.g. an empty part of the tab bar) or the background</dd>
+            <dt>Spin</dt><dd>Drag the outer background in a circle, twist with two fingers, or use ⟲ ⟳ on the pad</dd>
             <dt>Zoom</dt><dd>Mouse wheel outside the page, or Ctrl + wheel</dd>
             <dt>Reset</dt><dd>"Reset" at the bottom right, or double-click the background</dd>
             <dt>Open a face</dt><dd>Click a closed face (side or back) to make it a browser</dd>
@@ -2138,11 +2164,14 @@
 
   // ---------- 3D rotation ----------
   let rx = -10, ry = 22;          // 現在の角度 (deg)
-  let vx = 0, vy = 0;             // 慣性
+  let rz = 0;                     // 平行回転 (画面に対して時計回り = +)
+  let vx = 0, vy = 0, vz = 0;     // 慣性
   let zoom = 1;
   let dragging = false, lastX = 0, lastY = 0, lastT = 0;
   let down = null;                // クリック判定用: 押した位置と要素
-  let target = null;              // 自動で回すときの目標 { rx, ry, zoom? }
+  let target = null;              // 自動で回すときの目標 { rx, ry, rz, zoom? }
+
+  const ROT = () => `rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg)`;
 
   const faces = [
     ['.front',  [0, 0, 1]], ['.back',   [0, 0, -1]],
@@ -2161,25 +2190,40 @@
   }
 
   function apply() {
-    box.style.transform = `scale(${fitScale()}) rotateX(${rx}deg) rotateY(${ry}deg)`;
-    // CSS は rotateY → rotateX の順で点に作用する
-    const a = ry * Math.PI / 180, b = rx * Math.PI / 180;
+    box.style.transform = `scale(${fitScale()}) ${ROT()}`;
+    // CSS は rotateY → rotateX → rotateZ の順で点に作用する
+    const a = ry * Math.PI / 180, b = rx * Math.PI / 180, c = rz * Math.PI / 180;
     for (const f of faces) {
       const [x, y, z] = f.n;
       const x1 = x * Math.cos(a) + z * Math.sin(a);
       const z1 = -x * Math.sin(a) + z * Math.cos(a);
       const y2 = y * Math.cos(b) - z1 * Math.sin(b);
       const z2 = y * Math.sin(b) + z1 * Math.cos(b);
-      const lit = Math.max(0, x1 * L[0] + y2 * L[1] + z2 * L[2]);
+      const x3 = x1 * Math.cos(c) - y2 * Math.sin(c), y3 = x1 * Math.sin(c) + y2 * Math.cos(c);
+      const lit = Math.max(0, x3 * L[0] + y3 * L[1] + z2 * L[2]);
       // ブラウザになっている面は読みやすさ優先で陰を弱くする
       const k = f.el.classList.contains('browser') ? 0.25 : 0.5;
       f.shade.style.opacity = ((1 - lit) * k).toFixed(3);
     }
   }
 
-  function turnTo(trx, try_, tzoom) {
-    target = { rx: trx, ry: try_, zoom: tzoom };
-    vx = vy = 0;
+  // 平行回転は指定しなければ 0° (まっすぐ) に戻す
+  function turnTo(trx, try_, tzoom, trz = 0) {
+    target = { rx: trx, ry: try_, rz: trz, zoom: tzoom };
+    vx = vy = vz = 0;
+  }
+
+  // 平行回転のドラッグ: 画面の中心からこの距離より外の背景をつかむと平行回転になる。
+  // 縮小して箱が小さいときは、その分内側の円も小さくする
+  let dragMode = 'tilt', lastAngle = 0;
+  const rollRadius = () => 0.4 * Math.min(innerWidth, innerHeight) * Math.min(1, zoom);
+  const rollGuide = $('rollGuide');
+  function showRollGuide(on) {
+    if (on) {
+      const r = rollRadius();
+      Object.assign(rollGuide.style, { width: `${r * 2}px`, height: `${r * 2}px` });
+    }
+    rollGuide.classList.toggle('show', on);
   }
 
   // 操作できる要素やページ表示部分の上では回転しない
@@ -2203,13 +2247,17 @@
     tabDrag.over = face;
   }
 
-  // ---------- pinch (スマホの 2 本指で拡大縮小) ----------
+  // ---------- pinch (スマホの 2 本指で拡大縮小・ひねって平行回転) ----------
   // 回転・タブのドラッグより先に受けて、2 本目の指が触れたらそちらを取り消す
   const touches = new Map();   // pointerId -> { x, y }
   let pinch = null;            // { d0, z0 }
   const touchDist = () => {
     const [a, b] = [...touches.values()];
     return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  const touchAngle = () => {
+    const [a, b] = [...touches.values()];
+    return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
   };
   scene.addEventListener('pointerdown', (e) => {
     // 1 本目がページの中 (スクロールや操作) なら対象外。2 本目はどこに触れてもよい
@@ -2218,10 +2266,11 @@
     if (touches.size !== 2) return;
     e.stopImmediatePropagation();
     // 1 本目で始まっていた回転やタブのドラッグはやめる
-    dragging = false; down = null; vx = vy = 0;
+    dragging = false; down = null; vx = vy = vz = 0;
+    showRollGuide(false);
     if (tabDrag) { tabDrag.ghost?.remove(); tabDrag.over?.classList.remove('drop-target'); tabDrag = null; }
     document.body.classList.remove('dragging');
-    pinch = { d0: touchDist(), z0: zoom };
+    pinch = { d0: touchDist(), z0: zoom, a0: touchAngle(), r0: rz };
     target = null;
   });
   scene.addEventListener('pointermove', (e) => {
@@ -2230,6 +2279,7 @@
     if (!pinch || touches.size < 2) return;
     e.stopImmediatePropagation();
     zoom = Math.min(2.5, Math.max(0.3, pinch.z0 * touchDist() / pinch.d0));
+    rz = pinch.r0 + angleDiff(touchAngle(), pinch.a0);  // ひねった分だけ平行回転
     apply();
   });
   const endTouch = (e) => {
@@ -2251,9 +2301,16 @@
     }
     if (e.button !== 0 || interactive(e.target)) return;
     dragging = true; target = null;
-    vx = vy = 0;
+    vx = vy = vz = 0;
     lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
     down = { x: e.clientX, y: e.clientY, el: e.target };
+    // 箱の外の背景で、画面の中心から離れた所をつかんだら平行回転 (つまみを回すように)
+    const cx = innerWidth / 2, cy = innerHeight / 2;
+    dragMode = !e.target.closest('.face') && Math.hypot(e.clientX - cx, e.clientY - cy) > rollRadius() ? 'roll' : 'tilt';
+    if (dragMode === 'roll') {
+      lastAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
+      showRollGuide(true);
+    }
     scene.setPointerCapture(e.pointerId);
     document.body.classList.add('dragging');
   });
@@ -2271,10 +2328,27 @@
       setDropTarget(dropTargetAt(e.clientX, e.clientY));
       return;
     }
-    if (!dragging) return;
+    if (!dragging) {
+      // マウスを乗せただけのとき: 平行回転になる場所ならカーソルを回転の矢印にする
+      const roll = e.pointerType === 'mouse' && !e.target.closest('.face') &&
+        Math.hypot(e.clientX - innerWidth / 2, e.clientY - innerHeight / 2) > rollRadius();
+      document.body.classList.toggle('roll-zone', roll);
+      return;
+    }
     const now = performance.now();
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     const dt = Math.max(1, now - lastT);
+    if (dragMode === 'roll') {
+      // 画面の中心のまわりで、つかんだ点が回った角度だけ回す
+      const a = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2);
+      const d = angleDiff(a * 180 / Math.PI, lastAngle * 180 / Math.PI);
+      rz += d;
+      vz = d / dt * 16;
+      lastAngle = a;
+      lastX = e.clientX; lastY = e.clientY; lastT = now;
+      apply();
+      return;
+    }
     ry += dx * 0.4; rx -= dy * 0.4;
     vy = dx * 0.4 / dt * 16; vx = -dy * 0.4 / dt * 16;
     lastX = e.clientX; lastY = e.clientY; lastT = now;
@@ -2304,7 +2378,8 @@
     if (!dragging) return;
     dragging = false;
     document.body.classList.remove('dragging');
-    if (performance.now() - lastT > 80) vx = vy = 0;  // 止めてから離した場合は慣性なし
+    showRollGuide(false);
+    if (performance.now() - lastT > 80) vx = vy = vz = 0;  // 止めてから離した場合は慣性なし
     // ほとんど動かさずに離した = クリック。側面ならブラウザを開く
     if (e.type === 'pointerup' && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) {
       const side = down.el.closest(OPENABLE);
@@ -2339,19 +2414,19 @@
     padTick();
     if (!dragging && !padActive()) {
       if (target) {
-        const drx = angleDiff(target.rx, rx), dry = angleDiff(target.ry, ry);
-        rx += drx * 0.12; ry += dry * 0.12;
+        const drx = angleDiff(target.rx, rx), dry = angleDiff(target.ry, ry), drz = angleDiff(target.rz, rz);
+        rx += drx * 0.12; ry += dry * 0.12; rz += drz * 0.12;
         if (target.zoom !== undefined) zoom += (target.zoom - zoom) * 0.12;
-        if (Math.abs(drx) < 0.05 && Math.abs(dry) < 0.05 &&
+        if (Math.abs(drx) < 0.05 && Math.abs(dry) < 0.05 && Math.abs(drz) < 0.05 &&
             (target.zoom === undefined || Math.abs(zoom - target.zoom) < 0.002)) {
-          rx = target.rx; ry = target.ry;
+          rx = target.rx; ry = target.ry; rz = target.rz;
           if (target.zoom !== undefined) zoom = target.zoom;
           target = null;
         }
         apply();
-      } else if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01) {
-        rx += vx; ry += vy;
-        vx *= 0.95; vy *= 0.95;
+      } else if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01 || Math.abs(vz) > 0.01) {
+        rx += vx; ry += vy; rz += vz;
+        vx *= 0.95; vy *= 0.95; vz *= 0.95;
         apply();
       }
     }
@@ -2415,8 +2490,12 @@
   let stickVec = null;        // スティックを倒している量 { x, y } (-1〜1)。離しているときは null
   let keyVec = { x: 0, y: 0 };  // 矢印キーで倒している量
   let zoomDir = 0;            // ＋/− を押し続けている向き
+  let rollDir = 0;            // ⟲/⟳ を押し続けている向き (時計回り = +)
+  // ⟲/⟳ の回転の速さ (度/秒)。押し始めはゆっくりで、押し続けると少しずつ速くなる
+  const ROLL_MIN = 15, ROLL_MAX = 60, ROLL_RAMP = 2;  // ROLL_RAMP 秒で最高速
+  let rollHeld = 0;           // ⟲/⟳ を押している時間 (秒)
   let lastPadT = performance.now();
-  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomDir;
+  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomDir || rollDir;
 
   function padTick() {
     const now = performance.now(), dt = Math.min(0.05, (now - lastPadT) / 1000);
@@ -2432,6 +2511,14 @@
       vy = v.x * k; vx = -v.y * k;
       apply();
     }
+    if (rollDir) {
+      rollHeld += dt;
+      const speed = ROLL_MIN + (ROLL_MAX - ROLL_MIN) * Math.min(1, rollHeld / ROLL_RAMP);
+      rz += rollDir * speed * dt;
+      vz = 0;  // 離したらその場で止まる (惰性で行き過ぎないように)
+      target = null;
+      apply();
+    }
     if (zoomDir) {
       zoom = Math.min(2.5, Math.max(0.3, zoom * Math.exp(zoomDir * 0.8 * dt)));
       target = null;
@@ -2441,8 +2528,9 @@
 
   // 使い始めの合図: 最初は光らせ、初めて触ったらやめて、ドラッグでも回せることを 1 回だけ教える
   function firstUse() {
-    if (!pad.classList.contains('glow')) return;
-    pad.classList.remove('glow');
+    pad.classList.remove('blink');  // 触ったら光るのをやめる
+    if (!pad.classList.contains('untouched')) return;
+    pad.classList.remove('untouched');
     store.set('3d-browser-pad-used', '1');
     padHint.classList.add('show');
     setTimeout(() => padHint.classList.remove('show'), 3500);
@@ -2487,6 +2575,21 @@
     b.addEventListener('pointercancel', stop);
   }
 
+  // ⟲/⟳: 押している間、平行に回り続ける
+  for (const [sel, dir] of [['.roll-left', -1], ['.roll-right', 1]]) {
+    const b = pad.querySelector(sel);
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      b.setPointerCapture(e.pointerId);
+      firstUse();
+      rollDir = dir;
+      rollHeld = 0;
+    });
+    const stop = () => { rollDir = 0; };
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointercancel', stop);
+  }
+
   // 矢印キー (文字を入力しているときは効かない)
   const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const held = new Set();
@@ -2524,7 +2627,10 @@
     const mouse = matchMedia('(pointer: fine)').matches;
     if (saved !== null) showPad(saved !== '1');
     else showPad(!mouse, false);
-    if (!pad.hidden && !store.get('3d-browser-pad-used')) pad.classList.add('glow');
+    if (!pad.hidden && !store.get('3d-browser-pad-used')) {
+      pad.classList.add('untouched', 'blink');  // untouched: まだ触っていない (初回ヒント用)
+      setTimeout(() => pad.classList.remove('blink'), 10000);  // 触らなくても 10 秒で光るのをやめる
+    }
     if (saved === null && mouse && !store.get('3d-browser-drag-hinted')) {
       store.set('3d-browser-drag-hinted', '1');  // ヒントと揺れは最初の 1 回だけ
       showDragHint();
@@ -2535,12 +2641,16 @@
   function showDragHint() {
     padHint.textContent = t('dragHintFirst');
     padHint.dataset.i18n = 'dragHintFirst';
+    // 揺らす前に何か操作していたら揺らさない (リセットや拡大縮小を上書きしないため)
+    let touched = false;
+    const mark = () => { touched = true; };
+    for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, mark, { capture: true, once: true });
     setTimeout(() => {
-      if (dragging || padActive()) return;  // もう触っていたら何もしない
+      if (touched || dragging || padActive() || target) return;
       padHint.classList.add('show');
       const r0 = rx, y0 = ry;
-      turnTo(r0 - 4, y0 + 18);
-      setTimeout(() => { if (!dragging && !padActive()) turnTo(r0, y0); }, 700);
+      turnTo(r0 - 4, y0 + 18, undefined, rz);
+      setTimeout(() => { if (!touched && !dragging && !padActive()) turnTo(r0, y0, undefined, rz); }, 700);
       setTimeout(() => {
         padHint.classList.remove('show');
         padHint.textContent = t('dragHint');

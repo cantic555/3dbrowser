@@ -10,6 +10,8 @@
   }
   .draw-fly { right: 56px; }
   .draw-clear:hover, .draw-fly:hover { background: #eef1f8; border-color: #c9d3ee; }
+  /* 透過モードではガラスに描いたように、背景を透明にする */
+  body.see-through .glass .draw { background: transparent; }
   /* 面から飛び立つ線 (箱の中に 3D で置く) */
   .fly3d { position: absolute; pointer-events: none; }
   /* 暗い背景に出ても見えるよう、白くふちどる */
@@ -160,5 +162,5 @@
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
   }
-  B3D.registerPage({ id: 'draw', title: 'draw', info: 'infoDraw', menu: true, strings: STR, css: CSS, render: renderDraw });
+  B3D.registerPage({ id: 'draw', title: 'draw', info: 'infoDraw', menu: true, glass: true, strings: STR, css: CSS, render: renderDraw });
 })();

@@ -253,6 +253,14 @@
   /* 不透明度は透過ボタンの長押しで変えられる (--st: ブラウザの面、--st-face: 閉じている面) */
   body.see-through .face { opacity: var(--st-face, .2); backface-visibility: visible; }
   body.see-through .face.browser { opacity: var(--st, .55); }
+  /* ガラスのページ (小人・お絵描き): 透過モードでは中身の背景を透明にして、描いたものだけをくっきり見せる。
+     面そのものは薄くせず、枠 (タブ・アドレスバーのまわり) だけを透け具合に合わせて透かす */
+  body.see-through .face.browser.glass { opacity: 1; background: transparent; box-shadow: none; }
+  body.see-through .face.glass .tabs { background: rgb(211 213 219 / var(--st, .55)); }
+  body.see-through .face.glass .toolbar { background: rgb(233 234 238 / var(--st, .55)); }
+  body.see-through .face.glass .tab.active { background: rgb(233 234 238 / var(--st, .55)); }
+  body.see-through .face.glass .panes { background: transparent; }
+  body.see-through .face.glass .shade { opacity: 0 !important; }
   /* 右下の操作ボタン */
   #controls { position: fixed; right: 16px; bottom: 10px; z-index: 20; display: flex; gap: 8px; }
   #controls button {
@@ -632,6 +640,7 @@
   //   title: タブ名 (STR のキー、または文字を返す関数)
   //   info: 説明ページの一覧に出す説明 (STR のキー)
   //   langRerender: 言語を切り替えたら描き直す (文字だけのページ)。false なら題名だけ変える
+  //   glass: 透過モードのとき、中身の背景を透明にする (ガラスに描いたように見せる。ページ側も白い背景を描かない)
   //   render(tab, api): ページの中身を tab.pane に作る。api は本体の機能の窓口 (pageApi)
   //   strings: そのページの文字 ({ キー: [日本語, English] })。STR に足す
   //   css: そのページのスタイル
@@ -679,6 +688,7 @@
   function render(tab) {
     const entry = tab.history[tab.index];
     disposePage(tab);
+    tab.glass = entry?.type === 'page' && !!PAGES.get(entry.id).glass;
     tab.pane.innerHTML = '';
     if (!entry) renderStart(tab);
     else if (entry.type === 'page') renderPage(tab, PAGES.get(entry.id));
@@ -1151,6 +1161,7 @@
       // アドレスバーと戻る/進むボタンを表示中のタブに合わせる
       sync(tab) {
         if (tab !== browser.active) return;
+        face.classList.toggle('glass', !!tab.glass);  // 表示中のページがガラスなら、面にも印を付ける
         if (document.activeElement !== address) address.value = tab.addr;
         backBtn.disabled = tab.index <= 0;
         fwdBtn.disabled = tab.index >= tab.history.length - 1;
@@ -1223,7 +1234,7 @@
   // ブラウザを閉じて元の面に戻す。タブが残っていれば一緒に捨てる
   function closeFace(face) {
     for (const tab of face._browser?.tabs || []) disposePage(tab);
-    face.classList.remove('browser');
+    face.classList.remove('browser', 'glass');
     face._browser = null;
     // 陰・ロゴ・大きさを変えるつまみは残す
     const keep = ['shade', 'logo', 'resize-grip', 'resize-probe'];
@@ -1682,7 +1693,7 @@
   // 短く押すとオン・オフ。長押しすると透け具合のスライダーが出て、指を離さずに上下に動かして選ぶ
   // (上ほど透ける)。選んだ透け具合は覚えておく
   const ST_KEY = '3d-browser-see-through';
-  const ST_MIN = 0.15, ST_MAX = 0.95;   // ブラウザの面の不透明度の範囲
+  const ST_MIN = 0.15, ST_MAX = 1;      // ブラウザの面の不透明度の範囲 (1 = まったく透けない)
   const ST_FACE = 0.2 / 0.55;           // 閉じている面は、ブラウザの面のこの割合 (少し多めに透ける)
   const seeBtn = $('seeThrough'), stSlider = $('stSlider');
   const stTrack = stSlider.querySelector('.st-track');
@@ -2169,9 +2180,9 @@
 </script>
 <!-- 内蔵ページのプラグイン。node build-plugins.mjs で plugins/ の中身から自動で書き換える (手で編集しない) -->
 <!-- plugins:begin -->
-<script src="plugins/draw.js?v=59d4af4b"></script>
+<script src="plugins/draw.js?v=1c90fb03"></script>
 <script src="plugins/horror.js?v=9e427bb3"></script>
-<script src="plugins/kobito.js?v=26a06a61"></script>
+<script src="plugins/kobito.js?v=f6f7ee02"></script>
 <!-- plugins:end -->
 </body>
 </html>

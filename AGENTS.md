@@ -48,7 +48,7 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 
 ### 内蔵ページ (プラグイン)
 - `about:<id>` のページは `registerPage(def)` で `PAGES` に登録する。本体にあるのは `about:this` (自分自身を `?depth=N` で入れ子に) と `about:info`。お絵描き・ホラー・小人は `plugins/*.js` から `B3D.registerPage` で登録する。
-- `def`: `id` / `title` (STR のキー) / `info` (説明ページの一覧の説明) / `menu` (スタートページと説明ページに並べる) / `langRerender` / `strings` (`STR` に足す) / `css` / `render(tab, api)`
+- `def`: `id` / `title` (STR のキー) / `info` (説明ページの一覧の説明) / `menu` (スタートページと説明ページに並べる) / `langRerender` / `glass` (透過モードで中身の背景を透明にする。面に `.glass` が付く。ページ側も白い背景を描かない) / `strings` (`STR` に足す) / `css` / `render(tab, api)`
 - ページは本体の中身 (`rx`、`ROT()` など) を直接さわらず、`render` に渡される `api` (`pageApi`) だけを使う: `t` / `pick` / `face()` / `onFrame` / `onCleanup` / `add3d` / `place3d` / `offsetInFace` / `faceGravity` / `faceFacing` / `shake` / `seeThrough` / `giveItem` / `acceptItem` など。
 - ページを離れる (別のページへ移る・タブを閉じる・面を閉じる) と、`onFrame` の処理、`add3d` の要素、`acceptItem` の受け取り口は自動で片付く。それ以外は `onCleanup` で登録する。
 - ページ間の受け渡しは `giveItem(kind, html, titleKey)` / `acceptItem(kind, el, fn)` (例: ホラーの花 → 小人)。片方のプラグインがなくても壊れない。

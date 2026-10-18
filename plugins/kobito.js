@@ -529,10 +529,14 @@
       const face = api.face();
       const g = face ? api.faceGravity(face) : { x: 0, y: 1 };
       const m = Math.hypot(g.x, g.y), upright = m > 0.35;
-      // 背景は真っ白なだけ
+      // 背景は真っ白なだけ。透過モードではガラスのように透明にする (小人や線だけが見える)
       ctx.setTransform(R, 0, 0, R, 0, 0);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0, 0, W, H);
+      if (api.seeThrough()) {
+        ctx.clearRect(0, 0, W, H);
+      } else {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, W, H);
+      }
       for (const f of planted) drawFlower(f.x * W, H, KS * 1.9);  // 小人より少し背が高く、頭の上から花がのぞく
       drawLines();
       if (looseFlower) drawFlower(looseFlower.x, looseFlower.y + 8, KS * 1.1);
@@ -987,5 +991,5 @@
       draw();
     });
   }
-  B3D.registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, strings: STR, css: CSS, render: renderKobito });
+  B3D.registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, glass: true, strings: STR, css: CSS, render: renderKobito });
 })();

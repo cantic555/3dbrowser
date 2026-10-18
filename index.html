@@ -310,25 +310,35 @@
   }
   .stick:not(.active) .knob { transition: transform .18s ease-out; }  /* 離すと中心へ戻る */
   .zoom-btns, .roll-btns { display: flex; flex-direction: column; gap: 8px; }
-  /* ⟲⟳ の長押し: リングがなめらかに伸び、1/3・2/3・一周で速さが 1 段ずつ上がる。
+  /* ⟲⟳・＋/− の長押し: リングがなめらかに伸び、1/3・2/3・一周で速さが 1 段ずつ上がる。
      リングが出ているときに離すと、その速さのままロック (ボタンが青くなる) */
-  .roll-btns button { position: relative; }
-  .roll-btns button::before, .roll-btns button::after {
+  .roll-btns button, .zoom-btns button { position: relative; }
+  .roll-btns button::before, .roll-btns button::after, .zoom-btns button::before, .zoom-btns button::after {
     content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none;
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
     mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
     opacity: 0; transition: opacity .15s;
   }
-  .roll-btns button::before {
+  .roll-btns button::before, .zoom-btns button::before {
     background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), rgba(255,255,255,.18) 0);
   }
   /* 速さが変わる位置 (1/3・2/3) の目立たない目盛り */
-  .roll-btns button::after {
+  .roll-btns button::after, .zoom-btns button::after {
     background: conic-gradient(transparent 0 119deg, rgba(255,255,255,.45) 119deg 121deg,
       transparent 121deg 239deg, rgba(255,255,255,.45) 239deg 241deg, transparent 241deg);
   }
-  .roll-btns button.charging::before, .roll-btns button.charging::after { opacity: 1; }
-  #pad .roll-btns button.latched { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #pad button.charging::before, #pad button.charging::after { opacity: 1; }
+  #pad button.latched, #pad button.latched:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* スティックのロック: 倒したままじっとしていると外側の輪が一周し、離すとその位置で固定 (つまみが青くなる) */
+  .stick::before {
+    content: ''; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none;
+    background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), rgba(255,255,255,.18) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+    opacity: 0; transition: opacity .15s;
+  }
+  .stick.charging::before { opacity: 1; }
+  .stick.latched .knob { background: radial-gradient(circle at 35% 30%, #cfdcff, var(--accent)); }
   #pad button {
     width: 36px; height: 36px; padding: 0; border-radius: 50%;
     border: 1px solid rgba(255,255,255,.3); background: rgba(32,35,42,.6);
@@ -494,8 +504,9 @@
     fullscreenTip: ['画面いっぱいに表示する', 'Fill the whole screen'],
     langToggle: ['English', '日本語'],
     langToggleTip: ['Switch to English', '日本語に切り替える'],
-    padTip: ['ドラッグで回転 (遠くまで倒すほど速い)', 'Drag to rotate (the farther, the faster)'],
-    zoomIn: ['拡大', 'Zoom in'],
+    padTip: ['ドラッグで回転 (遠くまで倒すほど速い。倒したまま 2 秒じっとして離すと回し続ける)',
+      'Drag to rotate (the farther, the faster). Hold still for 2 s and release to keep spinning'],
+    zoomIn: ['拡大 (長押しで速さを選び、離すと近づき続ける)', 'Zoom in (hold to pick a speed, release to keep flying in)'],
     rollLeft: ['反時計回りに回す (長押しで速さを選び、離すと回し続ける)', 'Rotate counterclockwise (hold to pick a speed, release to keep spinning)'],
     minimize: ['最小化 (もう一度押すと元の大きさ)', 'Minimize (press again to restore)'],
     maximize: ['最大化 (もう一度押すと元の大きさ)', 'Maximize (press again to restore)'],
@@ -511,7 +522,7 @@
     sizeTall: ['超縦長', 'Super tall'],
     sizeMax: ['最大化', 'Maximize'],
     rollRight: ['時計回りに回す (長押しで速さを選び、離すと回し続ける)', 'Rotate clockwise (hold to pick a speed, release to keep spinning)'],
-    zoomOut: ['縮小', 'Zoom out'],
+    zoomOut: ['縮小 (長押しで速さを選び、離すと遠ざかり続ける)', 'Zoom out (hold to pick a speed, release to keep flying out)'],
     hidePad: ['操作パネルを隠す', 'Hide the control pad'],
     showPad: ['操作パネルを表示', 'Show the control pad'],
     dragHint: ['枠や背景をドラッグしても回せます', 'You can also drag the frame or the background'],
@@ -1203,9 +1214,14 @@
   }
 
   // 平行回転は指定しなければ 0° (まっすぐ) に戻す
-  // ⟲⟳ の長押しロックを外す (操作パネルの処理は後ろで定義されるが、呼ばれるのは起動後の操作のときだけ)
-  function stopRollLatch() { setLatch(0); }
+  // 操作パネルのロックを外す (操作パネルの処理は後ろで定義されるが、呼ばれるのは起動後の操作のときだけ)
+  function stopRollLatch() { roll.setLatch(0); }
+  function stopZoomLatch() { zoomer.setLatch(0); }
+  function stopLatches() { stopRollLatch(); stopZoomLatch(); stopStickLatch(); }
   function turnTo(trx, try_, tzoom, trz = 0) {
+    // 向きを目標へ動かすので、スティックのロックは外す (大きさも動かすなら ＋/− のロックも)
+    stopStickLatch();
+    if (tzoom !== undefined) stopZoomLatch();
     target = { rx: trx, ry: try_, rz: trz, zoom: tzoom };
     vx = vy = vz = 0;
   }
@@ -1304,7 +1320,7 @@
   addEventListener('keydown', (e) => { if (e.key === 'Escape') sizeMenu.hidden = true; });
 
   function resetAll() {
-    stopRollLatch();
+    stopLatches();
     sizeMode = 'normal';
     setSize(W, H, true);
     turnTo(0, 0, 1);
@@ -1410,6 +1426,7 @@
     if (tabDrag) { tabDrag.ghost?.remove(); tabDrag.over?.classList.remove('drop-target'); tabDrag = null; }
     document.body.classList.remove('dragging');
     stopRollLatch();
+    stopZoomLatch();
     pinch = { d0: touchDist(), z0: zoom, a0: touchAngle(), r0: rz };
     target = null;
   });
@@ -1451,6 +1468,8 @@
       stopRollLatch();  // 手でロールしたら、回し続けるのをやめる
       lastAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
       showRollGuide(true);
+    } else {
+      stopStickLatch();  // 手で傾けたら、スティックで回し続けるのをやめる
     }
     scene.setPointerCapture(e.pointerId);
     document.body.classList.add('dragging');
@@ -1542,6 +1561,7 @@
     // Ctrl+ホイール / ピンチは、どこでもブラウザ自体の拡大ではなく 3D の拡大縮小にする
     if (!e.ctrlKey && interactive(e.target)) return;
     e.preventDefault();
+    stopZoomLatch();
     zoom = Math.min(2.5, Math.max(0.15, zoom * Math.exp(-e.deltaY * 0.001)));
     apply();
   }, { passive: false });
@@ -1628,65 +1648,163 @@
   };
   let stickVec = null;        // スティックを倒している量 { x, y } (-1〜1)。離しているときは null
   let keyVec = { x: 0, y: 0 };  // 矢印キーで倒している量
-  let zoomDir = 0;            // ＋/− を押し続けている向き
-  let rollDir = 0;            // ⟲/⟳ を押し続けている向き (時計回り = +)
-  // ⟲/⟳ の回転の速さ (度/秒)。押し始めはゆっくりで、押し続けると少しずつ速くなる
-  // ⟲⟳ の速さ。押し始めは ROLL_SLOW、ROLL_STEP 秒ごとにリングが 1 段伸びて ROLL_STAGES の速さになる。
-  // 最高速は眺めやすさ優先で控えめ。速く回したいときは外側の背景を手でドラッグする (上限なし)
-  const ROLL_SLOW = 10, ROLL_STEP = 0.8, ROLL_STAGES = [10, 20, 30];  // 度/秒
-  let rollHeld = 0;           // ⟲/⟳ を押している時間 (秒)
-  let rollStage = 0;          // リングの段 (0 = まだリングが出ていない)
-  let rollLatch = 0;          // ロック中の向き (時計回り = +、0 = ロックなし)
-  let rollSpeed = 0;          // ロック中の速さ (度/秒)
-  const rollBtns = { '-1': pad.querySelector('.roll-left'), '1': pad.querySelector('.roll-right') };
-  function setLatch(dir) {
-    rollLatch = dir;
-    for (const [d, b] of Object.entries(rollBtns)) b.classList.toggle('latched', +d === dir);
+  // スティックのロック: 倒したままほぼ動かさずに STICK_WAIT 秒たつと外側の輪が現れ、
+  // さらに STICK_FILL 秒で一周する。一周してから離すと、その位置 (= 速さ) のまま回り続ける
+  const STICK_WAIT = 1, STICK_FILL = 1, STICK_STILL = 0.08;  // STICK_STILL: 「動かしていない」とみなす範囲
+  let stickLatch = null;      // ロック中の倒している量 { x, y }。ロックしていないときは null
+  let stickStill = 0;         // ほぼ動かさずに倒している時間 (秒)
+  let stickAnchor = null;     // じっとしているかを測る基準の位置
+  let stickReady = false;     // 輪が一周して、離せばロックできる
+
+  // ⟲⟳ と ＋/− の長押し。押し始めは stages[0] の速さで、STEP 秒ごとにリングが 1 段伸びて速くなる。
+  // リングが出ているときに離すと、その段の速さのまま続ける (ロック。ボタンが青くなる)
+  const STEP = 0.8;
+  function holdGroup(btns, stages) {
+    const g = {
+      btns, stages,
+      dir: 0,     // 押している向き (0 = 押していない)
+      held: 0,    // 押している時間 (秒)
+      stage: 0,   // リングの段 (0 = まだリングが出ていない)
+      latch: 0,   // ロック中の向き (0 = ロックなし)
+      speed: 0,   // ロック中の速さ
+      setLatch(dir) {
+        const changed = g.latch !== dir;
+        g.latch = dir;
+        for (const [d, b] of Object.entries(btns)) b.classList.toggle('latched', +d === dir);
+        if (changed) g.onLatch?.(dir);
+      },
+      // 押している間、毎フレーム呼ぶ。リングを伸ばし、今の速さを返す
+      hold(dt) {
+        g.held += dt;
+        const b = btns[g.dir], n = stages.length;
+        const stage = Math.min(n, Math.floor(g.held / STEP));
+        if (stage !== g.stage) {
+          g.stage = stage;
+          b.classList.toggle('charging', stage > 0);
+          navigator.vibrate?.(15);  // 段が上がるたびに軽く振動 (スマホ)
+        }
+        // リングは 1/3 の位置から現れて、一周までなめらかに伸びる
+        if (stage) showRing(b, Math.min(1, (1 + (g.held - STEP) / STEP) / n));
+        return stages[Math.max(0, stage - 1)];
+      },
+    };
+    for (const [d, b] of Object.entries(btns)) {
+      const dir = +d;
+      b.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        b.setPointerCapture(e.pointerId);
+        firstUse();
+        // ロック中の同じボタンを押したら止めるだけ。反対のボタンならロックを外して普通に動かす
+        if (g.latch === dir) { g.setLatch(0); return; }
+        g.setLatch(0);
+        g.dir = dir;
+        g.held = 0;
+        g.stage = 0;
+      });
+      // 離したとき: リングが出ていたらその段の速さでロック、出ていなければ止まる
+      const stop = (e) => {
+        if (!g.dir) return;
+        const btn = btns[g.dir];
+        btn.classList.remove('charging');
+        showRing(btn, 0);
+        if (g.stage && e.type === 'pointerup') {
+          g.speed = stages[g.stage - 1];
+          g.setLatch(g.dir);
+        }
+        g.dir = 0;
+        g.stage = 0;
+      };
+      b.addEventListener('pointerup', stop);
+      b.addEventListener('pointercancel', stop);
+    }
+    return g;
   }
   const showRing = (b, p) => b.style.setProperty('--p', p);
+
+  // ⟲/⟳ (度/秒)。最高速は眺めやすさ優先で控えめ。速く回したいときは外側の背景を手でドラッグする (上限なし)
+  const roll = holdGroup({ '-1': pad.querySelector('.roll-left'), '1': pad.querySelector('.roll-right') }, [10, 20, 30]);
+  // ＋/− (1 秒あたり大きさが e^速さ 倍)
+  const zoomer = holdGroup({ '1': pad.querySelector('.zoom-in'), '-1': pad.querySelector('.zoom-out') }, [0.3, 0.6, 1.0]);
+  // ＋/− のロックはループする: 極大を越えて近づきながら消え、極小より遠くから現れてまた近づく (− は逆向き)
+  const ZOOM_MIN = 0.15, ZOOM_MAX = 2.5, ZOOM_OVER = 1.6;  // ZOOM_OVER: 範囲の外で消えていく・現れる幅 (倍率)
+  function zoomLoop(dt) {
+    const lo = ZOOM_MIN / ZOOM_OVER, hi = ZOOM_MAX * ZOOM_OVER;
+    zoom *= Math.exp(zoomer.latch * zoomer.speed * dt);
+    if (zoom > hi) zoom = lo * zoom / hi;   // 突き抜けたら、遠くから出直す
+    if (zoom < lo) zoom = hi * zoom / lo;
+    // 範囲の外では薄くする (端で 0)
+    const k = Math.log(ZOOM_OVER);
+    const fade = zoom > ZOOM_MAX ? 1 - Math.log(zoom / ZOOM_MAX) / k
+      : zoom < ZOOM_MIN ? 1 - Math.log(ZOOM_MIN / zoom) / k : 1;
+    scene.style.opacity = fade < 1 ? Math.max(0, fade).toFixed(3) : '';
+  }
+  // ロックを外したら、範囲の外にいれば中に戻して、薄くしたのも戻す
+  zoomer.onLatch = (dir) => {
+    if (dir) return;
+    zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+    scene.style.opacity = '';
+    apply();
+  };
+
   let lastPadT = performance.now();
-  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomDir || rollDir;
+  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomer.dir || roll.dir;
 
   function padTick() {
     const now = performance.now(), dt = Math.min(0.05, (now - lastPadT) / 1000);
     lastPadT = now;
-    const v = stickVec || keyVec;
+    const v = stickVec || stickLatch || keyVec;
     const m = Math.hypot(v.x, v.y);
     if (m > 0.05) {
       const k = PAD_SPEED * Math.pow(Math.min(1, m), 1.5) / m * dt;
       // 背景のドラッグと同じ向き: 右に倒すと右へ、上に倒すと上へ回る
       ry += v.x * k; rx -= v.y * k;
       target = null;
-      // 離したときに少しだけ惰性で回り続けるよう、今の速さを覚えておく
-      vy = v.x * k; vx = -v.y * k;
+      // 離したときに少しだけ惰性で回り続けるよう、今の速さを覚えておく (ロック中は惰性を使わない)
+      if (stickLatch && !stickVec) vx = vy = 0;
+      else { vy = v.x * k; vx = -v.y * k; }
       apply();
     }
-    if (rollDir) {
-      rollHeld += dt;
-      const b = rollBtns[rollDir];
-      const stage = Math.min(ROLL_STAGES.length, Math.floor(rollHeld / ROLL_STEP));
-      if (stage !== rollStage) {
-        rollStage = stage;
-        b.classList.toggle('charging', stage > 0);
-        navigator.vibrate?.(15);  // 段が上がるたびに軽く振動 (スマホ)
-      }
-      // リングは 1/3 の位置から現れて、一周までなめらかに伸びる
-      const n = ROLL_STAGES.length;
-      if (stage) showRing(b, Math.min(1, (1 + (rollHeld - ROLL_STEP) / ROLL_STEP) / n));
-      const speed = stage ? ROLL_STAGES[stage - 1] : ROLL_SLOW;
-      rz += rollDir * speed * dt;
+    if (stickVec) chargeStick(dt);
+    if (roll.dir) {
+      rz += roll.dir * roll.hold(dt) * dt;
       vz = 0;  // 離したらその場で止まる (惰性で行き過ぎないように)
       target = null;
       apply();
-    } else if (rollLatch) {
-      rz += rollLatch * rollSpeed * dt;  // 手を離しても同じ速さで回り続ける
+    } else if (roll.latch) {
+      rz += roll.latch * roll.speed * dt;  // 手を離しても同じ速さで回り続ける
       apply();
     }
-    if (zoomDir) {
-      zoom = Math.min(2.5, Math.max(0.15, zoom * Math.exp(zoomDir * 0.8 * dt)));
+    if (zoomer.dir) {
+      zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom * Math.exp(zoomer.dir * zoomer.hold(dt) * dt)));
       target = null;
       apply();
+    } else if (zoomer.latch) {
+      zoomLoop(dt);
+      apply();
     }
+  }
+
+  // スティックを倒したままじっとしている時間を測り、外側の輪を伸ばす
+  function chargeStick(dt) {
+    const moved = !stickAnchor || Math.hypot(stickVec.x - stickAnchor.x, stickVec.y - stickAnchor.y) > STICK_STILL;
+    if (moved || Math.hypot(stickVec.x, stickVec.y) <= 0.05) {  // 動かした・ほとんど倒していない → 測り直し
+      stickAnchor = { ...stickVec };
+      stickStill = 0;
+    } else {
+      stickStill += dt;
+    }
+    const p = Math.min(1, Math.max(0, (stickStill - STICK_WAIT) / STICK_FILL));
+    stick.classList.toggle('charging', stickStill > STICK_WAIT);
+    showRing(stick, p);
+    if (p >= 1 && !stickReady) navigator.vibrate?.(30);  // 一周した (離せばロック)
+    stickReady = p >= 1;
+  }
+
+  function stopStickLatch() {
+    if (!stickLatch) return;
+    stickLatch = null;
+    stick.classList.remove('latched');
+    if (!stickVec) knob.style.transform = '';
   }
 
   // 使い始めの合図: 最初は光らせ、初めて触ったらやめて、ドラッグでも回せることを 1 回だけ教える
@@ -1713,61 +1831,31 @@
     stick.setPointerCapture(e.pointerId);
     stick.classList.add('active');
     firstUse();
+    stopStickLatch();  // ロック中なら外して、そのまま普通に操作する
+    stickAnchor = null;
+    stickStill = 0;
+    stickReady = false;
     setStick(e);
   });
   stick.addEventListener('pointermove', (e) => { if (stickVec) setStick(e); });
-  const stickUp = () => {
+  // 離したとき: 輪が一周していたら、その位置でロック (つまみはその場に残る)。それ以外は中心へ戻る
+  const stickUp = (e) => {
+    if (!stickVec) return;
+    const lock = stickReady && e.type === 'pointerup' && stickVec;
     stickVec = null;
-    stick.classList.remove('active');
-    knob.style.transform = '';
+    stickReady = false;
+    stick.classList.remove('active', 'charging');
+    showRing(stick, 0);
+    if (lock) {
+      stickLatch = lock;
+      stick.classList.add('latched');
+      vx = vy = 0;
+    } else {
+      knob.style.transform = '';
+    }
   };
   stick.addEventListener('pointerup', stickUp);
   stick.addEventListener('pointercancel', stickUp);
-
-  // ＋/−: 押している間、拡大・縮小し続ける
-  for (const [sel, dir] of [['.zoom-in', 1], ['.zoom-out', -1]]) {
-    const b = pad.querySelector(sel);
-    b.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      b.setPointerCapture(e.pointerId);
-      firstUse();
-      zoomDir = dir;
-    });
-    const stop = () => { zoomDir = 0; };
-    b.addEventListener('pointerup', stop);
-    b.addEventListener('pointercancel', stop);
-  }
-
-  // ⟲/⟳: 押している間、平行に回り続ける
-  for (const [sel, dir] of [['.roll-left', -1], ['.roll-right', 1]]) {
-    const b = pad.querySelector(sel);
-    b.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      b.setPointerCapture(e.pointerId);
-      firstUse();
-      // ロック中の同じボタンを押したら止めるだけ。反対のボタンならロックを外して普通に回す
-      if (rollLatch === dir) { setLatch(0); return; }
-      setLatch(0);
-      rollDir = dir;
-      rollHeld = 0;
-      rollStage = 0;
-    });
-    // 離したとき: リングが出ていたらその段の速さでロック、出ていなければ止まる
-    const stop = (e) => {
-      if (!rollDir) return;
-      const btn = rollBtns[rollDir];
-      btn.classList.remove('charging');
-      showRing(btn, 0);
-      if (rollStage && e.type === 'pointerup') {
-        rollSpeed = ROLL_STAGES[rollStage - 1];
-        setLatch(rollDir);
-      }
-      rollDir = 0;
-      rollStage = 0;
-    };
-    b.addEventListener('pointerup', stop);
-    b.addEventListener('pointercancel', stop);
-  }
 
   // 矢印キー (文字を入力しているときは効かない)
   const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -1780,6 +1868,7 @@
   addEventListener('keydown', (e) => {
     if (!KEYS[e.key] || typing(document.activeElement) || e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
+    stopStickLatch();  // 矢印キーで回したら、スティックで回し続けるのをやめる
     held.add(e.key);
     syncKeys();
   });

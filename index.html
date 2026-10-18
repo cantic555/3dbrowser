@@ -421,6 +421,7 @@
   .info header, .info footer { grid-column: 1 / -1; }
   .info h1 { margin: 0 0 4px; font-size: 22px; }
   .info h1 span { color: var(--accent); }
+  .info h1 .version { margin-left: 10px; font-size: 12px; font-weight: normal; color: var(--muted); }
   .info h2 {
     margin: 14px 0 6px; padding-bottom: 2px; font-size: 14px;
     border-bottom: 1px solid #e4e6eb;
@@ -883,12 +884,13 @@
   // ---------- about:info ----------
   // 署名・ライセンス・ソースコード (GitHub はほかのサイトの中に表示できないので新しいタブで開く)
   const REPO_URL = 'https://github.com/cantic555/3dbrowser';
+  // 見出しの横に小さく出すバージョン
+  const versionTag = () => `<small class="version">${VERSION} (${BUILD})</small>`;
   const infoFooter = (sourceLabel) => `
         <footer>
           2026 made by <a href="https://x.com/chan2001x" target="_blank" rel="noopener">cantik</a> with Claude Code
           ・ <a href="${REPO_URL}/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
           ・ <a href="${REPO_URL}" target="_blank" rel="noopener">${sourceLabel} (GitHub ↗)</a>
-          ・ <span class="version">${VERSION} (${BUILD})</span>
         </footer>`;
   // 開けるページの一覧 (about:this、登録したページ、about:info の順)
   const pageRows = () => [PAGES.get('this'), ...menuPages(), PAGES.get('info')]
@@ -896,7 +898,7 @@
   const INFO_JA = () => `
       <article class="info">
         <header>
-          <h1>3D <span>Browser</span> について</h1>
+          <h1>3D <span>Browser</span> について${versionTag()}</h1>
           <p>やたら縦に長いケノン脱毛(未購入)のサイトからひらめいて作りました。</p>
         </header>
         <section>
@@ -928,7 +930,7 @@
   const INFO_EN = () => `
       <article class="info">
         <header>
-          <h1>About 3D <span>Browser</span></h1>
+          <h1>About 3D <span>Browser</span>${versionTag()}</h1>
           <p>Inspired by the ridiculously long web page of the Ke-non hair removal device (which I have not bought).</p>
         </header>
         <section>

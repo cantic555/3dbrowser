@@ -36,13 +36,39 @@ A web app that shows a thick, rotatable 3D browser inside your browser.
 | `about:kobito` | 小人（Tiny Folks）が暮らしている。回すとあたふたする |
 | `about:info` | 操作方法などの説明 |
 
+お絵描き・ホラー・小人はプラグイン（`plugins/*.js`）になっています。作り方は下の「内蔵ページを追加する」を見てください。
+
 ## 注意
 
 iframe を使っているため、埋め込みを拒否している多くのサイト（Google、X など）は中に表示されません。
 
 ## 動かし方
 
-`index.html` 1 ファイルだけで動きます。ビルドも外部ライブラリも不要なので、ブラウザで直接開くか、好きな静的サーバーで配信してください。
+`index.html` と `plugins/` フォルダだけで動きます。外部ライブラリは不要なので、`index.html` をブラウザで直接開くか、好きな静的サーバーで配信してください。
+
+## 内蔵ページを追加する
+
+`plugins/` に JS ファイルを置いて `node build-plugins.mjs` を実行すると、`index.html` に読み込みが追加され、`about:<id>` で開けるようになります（スタートページのボタンと説明ページの一覧にも出ます）。
+
+```js
+// plugins/hello.js
+B3D.registerPage({
+  id: 'hello',                          // about:hello で開く
+  title: 'hello',                       // タブ名 (strings のキー)
+  info: 'helloInfo',                    // 説明ページの一覧に出す説明
+  menu: true,                           // スタートページと説明ページに並べる
+  strings: { hello: ['こんにちは', 'Hello'], helloInfo: ['あいさつ', 'Greetings'] },  // [日本語, English]
+  css: `.hello { padding: 40px; font-size: 32px; }`,
+  render(tab, api) {                    // ページの中身を作る
+    const el = document.createElement('div');
+    el.className = 'hello';
+    el.textContent = api.t('hello');
+    tab.pane.appendChild(el);
+  },
+});
+```
+
+`api` から本体の機能を使えます（面の向き・重力、面の外への 3D 表示、毎フレームの処理、ページ間のアイテムの受け渡しなど）。中身は `index.html` の `pageApi` を見てください。
 
 ## デプロイ (Cloudflare)
 
@@ -51,7 +77,7 @@ node deploy.mjs            # 公開する
 node deploy.mjs --dry-run  # アップロードせずに確認だけ
 ```
 
-`index.html` と `LICENSE` を `dist/` に集めて、`wrangler deploy` で Cloudflare Workers に配信します（設定は `wrangler.toml`）。
+`node build-plugins.mjs` を実行してから、`index.html`・`plugins/`・`LICENSE` を `dist/` に集めて、`wrangler deploy` で Cloudflare Workers に配信します（設定は `wrangler.toml`）。
 
 ## ライセンス
 

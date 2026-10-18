@@ -10,14 +10,16 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 
 - **3D Browser**: ブラウザの中に「厚みのある箱の形のブラウザ」を表示し、回したり、面をブラウザにしたりして遊ぶ Web アプリ。
 - 公開: https://3dbrowser.cantic.org/ (Cloudflare Workers の静的配信)
-- **`index.html` 1 ファイルだけで動く**。ビルドなし、外部ライブラリなし (CSS 3D Transform + 素の JS)。ブラウザで直接開けば動く。
+- **`index.html` (本体) + `plugins/*.js` (内蔵ページ) で動く**。外部ライブラリなし (CSS 3D Transform + 素の JS)。ブラウザで直接開けば動く (`file://` でも動くよう、ES モジュールや fetch は使わず普通の `<script>` で読み込む)。
 - ライセンス: MIT
 
 ## ファイル
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` | アプリ本体 (CSS → HTML → JS の順。約 3,000 行) |
+| `index.html` | アプリ本体 (CSS → HTML → JS の順。約 1,900 行) |
+| `plugins/*.js` | 内蔵ページのプラグイン (`draw` お絵描き / `horror` ホラー / `kobito` 小人) |
+| `build-plugins.mjs` | `plugins/` の中身を `index.html` の読み込み (`<!-- plugins:begin -->` 〜 `end`) に反映する |
 | `README.md` / `docs/*.png` | 人向けの説明とスクリーンショット |
 | `wrangler.toml` / `deploy.mjs` | Cloudflare へのデプロイ設定とスクリプト |
 | `LICENSE` | MIT |
@@ -39,12 +41,21 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 - `createBrowser(face)` で面をブラウザにする (`openFace` / `closeFace`)。側面は中身を `.squash` で縮めて表示する。
 - タブ = 履歴付きの表示領域。`navigate()` → `render()` で中身を描く。
 - 検索語は Wikipedia API (言語に合わせて ja/en)、URL は iframe で表示。
-- 内蔵ページは `INTERNAL` に登録する: `about:this` (自分自身を `?depth=N` で入れ子に) / `about:draw` / `about:horror` / `about:kobito` / `about:info` / `about:tall`
-- 面の外 (3D 空間) に要素を出すときは `place3d(el, face, x, y, z, extra)`、ページ内の座標 → 面の座標は `offsetInFace()`。
-- 小人 (`about:kobito`) の重力は `faceGravity(face)` で、箱の向きから面の中での「下」を求める。
+- 外のサイトは `createView()` (今は `createIframeView`) で表示する。`element / open / resize / destroy` の形にそろえてある。
+- `about:tall` は `navigate()` の中で特別に扱う (ブラウザを超縦長にしてケノンを開く)。
+
+### 内蔵ページ (プラグイン)
+- `about:<id>` のページは `registerPage(def)` で `PAGES` に登録する。本体にあるのは `about:this` (自分自身を `?depth=N` で入れ子に) と `about:info`。お絵描き・ホラー・小人は `plugins/*.js` から `B3D.registerPage` で登録する。
+- `def`: `id` / `title` (STR のキー) / `info` (説明ページの一覧の説明) / `menu` (スタートページと説明ページに並べる) / `langRerender` / `strings` (`STR` に足す) / `css` / `render(tab, api)`
+- ページは本体の中身 (`rx`、`ROT()` など) を直接さわらず、`render` に渡される `api` (`pageApi`) だけを使う: `t` / `pick` / `face()` / `onFrame` / `onCleanup` / `add3d` / `place3d` / `offsetInFace` / `faceGravity` / `faceFacing` / `shake` / `seeThrough` / `giveItem` / `acceptItem` など。
+- ページを離れる (別のページへ移る・タブを閉じる・面を閉じる) と、`onFrame` の処理、`add3d` の要素、`acceptItem` の受け取り口は自動で片付く。それ以外は `onCleanup` で登録する。
+- ページ間の受け渡しは `giveItem(kind, html, titleKey)` / `acceptItem(kind, el, fn)` (例: ホラーの花 → 小人)。片方のプラグインがなくても壊れない。
+- 面の外 (3D 空間) に要素を出すときは `api.add3d(el)` で箱に入れ、`api.place3d(el, face, x, y, z, extra)` で置く。ページ内の座標 → 面の座標は `offsetInFace()`。
+- 小人の重力は `faceGravity(face)` で、箱の向きから面の中での「下」を求める。
+- プラグインを追加・削除・変更したら `node build-plugins.mjs` を実行する (`index.html` の読み込みと `?v=` を更新)。スタートページはプラグインの読み込みが終わってから (`DOMContentLoaded`) 作る。
 
 ### 言語 (日本語 / English)
-- 画面に出る文字は**すべて**辞書 `STR` に `[日本語, English]` で入れ、`t(key)` で取り出す (`pick(key)` は配列からランダム)。
+- 画面に出る文字は**すべて**辞書 `STR` に `[日本語, English]` で入れ、`t(key)` で取り出す (`pick(key)` は配列からランダム)。プラグインの文字は `def.strings` に書く (登録で `STR` に足される)。
 - 静的な要素は `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` を付けると `applyLang()` で切り替わる。
 
 ### localStorage のキー
@@ -58,6 +69,7 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 - `about:info` (説明ページ) は、パソコンの画面では 1 画面に収まるようにする (日本語・英語とも)。
 - iframe で表示するサイトを追加するときは、実際に中で表示されるか確かめる (下の「ハマりどころ」)。
 - README の機能一覧も更新する。
+- 新しい内蔵ページは `plugins/` にプラグインとして作り、本体の機能は `api` 経由で使う。`api` に足りない機能は、本体の `pageApi` に足す。
 
 ## ハマりどころ
 
@@ -88,5 +100,5 @@ node deploy.mjs            # 公開
 node deploy.mjs --dry-run  # 確認だけ
 ```
 
-`index.html` と `LICENSE` を `dist/` に集めて `npx wrangler@4 deploy` する (Worker 名 `3d-browser`、カスタムドメイン `3dbrowser.cantic.org`)。
+`node build-plugins.mjs` を実行してから、`index.html`・`plugins/`・`LICENSE` を `dist/` に集めて `npx wrangler@4 deploy` する (Worker 名 `3d-browser`、カスタムドメイン `3dbrowser.cantic.org`)。
 反映の流れ: 変更 → コミット → `git push` → `node deploy.mjs`

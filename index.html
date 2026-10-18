@@ -55,8 +55,6 @@
     position: absolute;
     backface-visibility: hidden;
     overflow: hidden;
-    /* 側面ブラウザを開いたときに厚みがなめらかに変わるように */
-    transition: transform .6s ease, width .6s ease, height .6s ease, left .6s ease, top .6s ease;
   }
   .face .shade {
     position: absolute; inset: 0;
@@ -125,11 +123,22 @@
   .dots > :nth-child(2) { background: #febc2e; }
   .dots > :nth-child(3) { background: #28c840; }
   /* 赤 = 閉じる (Mac と同じ)。マウスを乗せると × を出す */
-  .dots .close-window {
+  /* 赤 = 閉じる、黄 = 最小化、緑 = 最大化 (Mac と同じ)。マウスを乗せると記号を出す */
+  .dots button {
     border: 0; padding: 0; cursor: pointer; position: relative;
     color: transparent; font-size: 9px; line-height: 12px; text-align: center;
   }
-  .dots:hover .close-window { color: rgba(0,0,0,.55); }
+  .dots:hover button { color: rgba(0,0,0,.55); }
+  /* 右下の角のつまみ: ドラッグでブラウザの大きさを変える */
+  .resize-grip {
+    position: absolute; right: 2px; bottom: 2px; z-index: 5; width: 18px; height: 18px;
+    cursor: nwse-resize; touch-action: none;
+    background: linear-gradient(135deg, transparent 0 45%, rgba(0,0,0,.28) 45% 52%, transparent 52% 64%,
+      rgba(0,0,0,.28) 64% 71%, transparent 71% 83%, rgba(0,0,0,.28) 83% 90%, transparent 90%);
+  }
+  .resize-probe { position: absolute; width: 0; height: 0; pointer-events: none; }
+  body.resizing, body.resizing #scene { cursor: nwse-resize; }
+  body.resizing iframe { pointer-events: none; }
   .tab-list { display: flex; align-items: flex-end; gap: 2px; min-width: 0; flex: 0 1 auto; }
   .tab {
     flex: 0 1 200px; min-width: 56px; height: 32px;
@@ -268,6 +277,19 @@
   }
   #controls button:hover { background: rgba(255,255,255,.16); }
   body.see-through #seeThrough { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #sizeMenu {
+    position: fixed; right: 16px; bottom: 48px; z-index: 30; min-width: 220px;
+    padding: 6px; border-radius: 12px; background: rgba(32,35,42,.95);
+    border: 1px solid rgba(255,255,255,.18); box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  #sizeMenu[hidden] { display: none; }
+  #sizeMenu button {
+    display: flex; justify-content: space-between; gap: 16px; width: 100%;
+    padding: 8px 12px; border: 0; border-radius: 8px; background: none;
+    color: #fff; font-size: 13px; text-align: left; cursor: pointer;
+  }
+  #sizeMenu button:hover, #sizeMenu button.current { background: rgba(255,255,255,.12); }
+  #sizeMenu button small { color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
 
   /* ---------- 操作パネル (スティックと拡大縮小) ---------- */
   #pad {
@@ -334,11 +356,7 @@
   #rollGuide span:first-child { left: -38px; }
   #rollGuide span:last-child { right: -38px; }
   #pad[hidden] ~ #padHint { bottom: 60px; }  /* パネルを畳んでいるときは、その分下に出す */
-  /* 幅の狭い画面 (スマホ) では、右下のボタンと重ならないよう少し上に置く */
-  @media (max-width: 720px) {
-    #pad { bottom: 52px; }
-    #padHint { bottom: 170px; }
-  }
+  /* 右下のボタンと重なるとき (幅の狭い画面など) は、JS (layoutPad) でパネルをボタンの上に置く */
 
   /* ---------- about:horror ---------- */
   .horror { position: absolute; inset: 0; overflow: hidden; background: #0b0c0e; color: #ddd; }
@@ -475,12 +493,15 @@
   </div>
 </div>
 <div id="controls">
+  <button id="sizeBtn" data-i18n="size" data-i18n-title="sizeTip" aria-haspopup="menu">サイズ</button>
   <button id="resetView" data-i18n="reset" data-i18n-title="resetTip">リセット</button>
   <button id="seeThrough" data-i18n="seeThrough" data-i18n-title="seeThroughTip">透過</button>
   <button id="fullscreen" data-i18n-title="fullscreenTip">全画面</button>
   <button id="padShow" hidden>🎮</button>
   <button id="langToggle"></button>
 </div>
+<!-- ブラウザの大きさのプリセット (「サイズ」ボタンで開く) -->
+<div id="sizeMenu" role="menu" hidden></div>
 <!-- 操作パネル: スティックを倒した方向に回る (遠くまで倒すほど速い) -->
 <div id="pad" hidden>
   <div class="roll-btns">
@@ -553,6 +574,19 @@
     padTip: ['ドラッグで回転 (遠くまで倒すほど速い)', 'Drag to rotate (the farther, the faster)'],
     zoomIn: ['拡大', 'Zoom in'],
     rollLeft: ['反時計回りに回す', 'Rotate counterclockwise'],
+    minimize: ['最小化 (もう一度押すと元の大きさ)', 'Minimize (press again to restore)'],
+    maximize: ['最大化 (もう一度押すと元の大きさ)', 'Maximize (press again to restore)'],
+    resizeTip: ['ドラッグで大きさを変える', 'Drag to resize'],
+    chipTall: ['超縦長', 'Super tall'],
+    size: ['サイズ', 'Size'],
+    sizeTip: ['ブラウザの大きさを選ぶ', 'Choose the browser size'],
+    sizePhone: ['スマホ (縦)', 'Phone (portrait)'],
+    sizeTablet: ['タブレット', 'Tablet'],
+    sizeLaptop: ['ノート PC (標準)', 'Laptop (default)'],
+    sizeWide: ['ワイド', 'Wide'],
+    sizeSquare: ['正方形', 'Square'],
+    sizeTall: ['超縦長', 'Super tall'],
+    sizeMax: ['最大化', 'Maximize'],
     rollRight: ['時計回りに回す', 'Rotate clockwise'],
     zoomOut: ['縮小', 'Zoom out'],
     hidePad: ['操作パネルを隠す', 'Hide the control pad'],
@@ -669,6 +703,11 @@
   function navigate(tab, input, push = true) {
     const s = input.trim();
     if (!s) return;
+    // about:tall: ブラウザを超縦長にして、やたら縦に長いケノン脱毛のサイトを一望する
+    if (s === 'about:tall') {
+      setTall();
+      return navigate(tab, 'https://ケノン.com/', push);
+    }
     const entry = INTERNAL[s] ? { type: INTERNAL[s] }
       : isUrl(s) ? { type: 'url', value: /^(https?|file):\/\//i.test(s) ? s : 'https://' + s }
       : { type: 'search', value: s };
@@ -703,7 +742,7 @@
         <h1>3D <span>Browser</span></h1>
         <p>${t('startLead')}</p>
         <div class="chips">
-          ${[[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
+          ${[[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], [t('chipTall'), 'about:tall'], ['3D Browser', 'about:this'],
              ['zoomquilt', 'https://zoomquilt.org/'],
              ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
              [t('draw'), 'about:draw'], [t('horror'), 'about:horror'], [t('kobito'), 'about:kobito'], [t('info'), 'about:info']]
@@ -1876,6 +1915,7 @@
           <dl>
             <dt>回す</dt><dd>ブラウザの枠 (タブバーの空いている所など) か背景をドラッグ</dd>
             <dt>平行に回す</dt><dd>画面の外側の背景を円を描くようにドラッグ、2 本指でひねる、パネルの ⟲ ⟳</dd>
+            <dt>大きさ</dt><dd>右下の角をドラッグ。黄の丸で最小化、緑の丸で最大化</dd>
             <dt>拡大・縮小</dt><dd>画面の外でホイール、または Ctrl + ホイール</dd>
             <dt>元に戻す</dt><dd>右下の「リセット」か、背景をダブルクリック</dd>
             <dt>面を開く</dt><dd>閉じている面 (側面・背面) をクリックでブラウザに</dd>
@@ -1909,14 +1949,15 @@
         <section>
           <h2>How to use</h2>
           <dl>
-            <dt>Rotate</dt><dd>Drag the browser frame (e.g. an empty part of the tab bar) or the background</dd>
-            <dt>Spin</dt><dd>Drag the outer background in a circle, twist with two fingers, or use ⟲ ⟳ on the pad</dd>
+            <dt>Rotate</dt><dd>Drag the frame (e.g. the tab bar) or the background</dd>
+            <dt>Spin</dt><dd>Circle-drag the outer background, two-finger twist, or ⟲ ⟳</dd>
+            <dt>Resize</dt><dd>Drag the bottom-right corner, or the yellow / green dots</dd>
             <dt>Zoom</dt><dd>Mouse wheel outside the page, or Ctrl + wheel</dd>
             <dt>Reset</dt><dd>"Reset" at the bottom right, or double-click the background</dd>
             <dt>Open a face</dt><dd>Click a closed face (side or back) to make it a browser</dd>
             <dt>Close a face</dt><dd>The red dot at the top left</dd>
             <dt>Tabs</dt><dd>Add with "+". Drag a tab to move it to another face</dd>
-            <dt>See-through</dt><dd>"See-through" at the bottom right lets you see the faces behind</dd>
+            <dt>See-through</dt><dd>"See-through" (bottom right) shows the faces behind</dd>
           </dl>
         </section>
         <section>
@@ -2027,7 +2068,7 @@
   // ---------- browser UI ----------
   const BROWSER_HTML = `
     <div class="tabs">
-      <div class="dots"><button class="close-window" data-i18n-title="close">×</button><span></span><span></span></div>
+      <div class="dots"><button class="close-window" data-i18n-title="close">×</button><button class="min-window" data-i18n-title="minimize">−</button><button class="max-window" data-i18n-title="maximize">＋</button></div>
       <div class="tab-list"></div>
       <button class="new-tab" data-i18n-title="newTab">+</button>
     </div>
@@ -2049,12 +2090,16 @@
       // 短い辺 (厚み) が SIDE_W になるようにレイアウトし、縦横同じ倍率で面の大きさまで縮める。
       // 長い辺は縮めたときに面の長さになるよう逆算する
       // (左右の面はとても縦長、上下の面はとても横長のブラウザになる)
-      const s = Math.min(face.offsetWidth, face.offsetHeight) / SIDE_W;
       root = document.createElement('div');
       root.className = 'squash';
-      root.style.width = `${face.offsetWidth / s}px`;
-      root.style.height = `${face.offsetHeight / s}px`;
-      root.style.transform = `scale(${s})`;
+      const fit = () => {
+        const s = Math.min(face.offsetWidth, face.offsetHeight) / SIDE_W;
+        root.style.width = `${face.offsetWidth / s}px`;
+        root.style.height = `${face.offsetHeight / s}px`;
+        root.style.transform = `scale(${s})`;
+      };
+      fit();
+      new ResizeObserver(fit).observe(face);  // ブラウザの大きさを変えたら縮め方も変える
       face.prepend(root);
     }
     root.insertAdjacentHTML('afterbegin', BROWSER_HTML);
@@ -2128,6 +2173,9 @@
     });
     q('.new-tab').addEventListener('click', () => browser.addTab(createTab()));
     q('.close-window').addEventListener('click', onEmpty);  // タブごとブラウザを閉じる
+    q('.min-window').addEventListener('click', () => toggleSizeMode('min'));
+    q('.max-window').addEventListener('click', () => toggleSizeMode('max'));
+    if (face.classList.contains('front')) addResizeGrip(face);
     return browser;
   }
 
@@ -2213,6 +2261,147 @@
     vx = vy = vz = 0;
   }
 
+  // ---------- ブラウザの大きさ ----------
+  // 見た目の倍率は元の大きさ (W × H) を基準に固定しているので、大きくすると見た目も大きくなる
+  // (実際のウィンドウと同じ)。大きさは覚えず、開くたびに元の大きさから始まる
+  const MIN_W = 320, MIN_H = 220, MAX_W = 4000, MAX_H = 6000;
+  const TALL_W = 420, TALL_H = 2600;  // 超縦長
+  let boxW = W, boxH = H;
+  let sizeMode = 'normal', savedSize = null;  // 最大化・最小化の前の大きさ
+  let sizeAnim = 0;
+
+  function applySize() {
+    document.documentElement.style.setProperty('--W', `${boxW}px`);
+    document.documentElement.style.setProperty('--H', `${boxH}px`);
+  }
+  // animate: なめらかに変える (約 0.35 秒)
+  function setSize(w, h, animate = false) {
+    w = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
+    h = Math.round(Math.min(MAX_H, Math.max(MIN_H, h)));
+    cancelAnimationFrame(sizeAnim);
+    if (!animate) { boxW = w; boxH = h; applySize(); return; }
+    const w0 = boxW, h0 = boxH, t0 = performance.now();
+    (function step(now) {
+      const k = Math.min(1, (now - t0) / 350), e = 1 - (1 - k) ** 3;
+      boxW = w0 + (w - w0) * e; boxH = h0 + (h - h0) * e;
+      applySize();
+      if (k < 1) sizeAnim = requestAnimationFrame(step);
+    })(t0);
+  }
+  // 拡大縮小していないときの見た目の倍率
+  const baseScale = () => Math.min(innerWidth * 0.82 / W, innerHeight * 0.78 / H);
+
+  // 緑 = 最大化 (画面いっぱい) / 黄 = 最小化。もう一度押すと元の大きさに戻る
+  function toggleSizeMode(mode) {
+    if (sizeMode === mode) {
+      sizeMode = 'normal';
+      setSize(savedSize.w, savedSize.h, true);
+      return;
+    }
+    if (sizeMode === 'normal') savedSize = { w: boxW, h: boxH };
+    sizeMode = mode;
+    if (mode === 'max') {
+      const s = baseScale();
+      setSize(innerWidth * 0.96 / s, innerHeight * 0.9 / s, true);
+      turnTo(0, 0, 1);  // 正面を向けて画面いっぱいに見せる
+    } else {
+      setSize(360, 240, true);
+    }
+  }
+  addEventListener('resize', () => { if (sizeMode === 'max') { sizeMode = 'normal'; toggleSizeMode('max'); } });
+
+  // 超縦長: 縦に長い箱を正面に向け、全体が見えるまで引く
+  // プリセットの大きさにして正面を向け、全体が見える大きさまで引く (大きいときだけ)
+  function setPreset(w, h, mode = 'preset') {
+    if (sizeMode === 'normal') savedSize = { w: boxW, h: boxH };
+    sizeMode = mode;
+    setSize(w, h, true);
+    const s = baseScale();
+    turnTo(0, 0, Math.max(0.15, Math.min(1, innerWidth * 0.9 / (w * s), innerHeight * 0.85 / (h * s))));
+  }
+  const setTall = () => setPreset(TALL_W, TALL_H, 'tall');
+
+  // 「サイズ」メニュー
+  const SIZE_PRESETS = [
+    ['sizePhone', 390, 844], ['sizeTablet', 820, 1180], ['sizeLaptop', W, H],
+    ['sizeWide', 1400, 600], ['sizeSquare', 800, 800], ['sizeTall', TALL_W, TALL_H], ['sizeMax'],
+  ];
+  const sizeMenu = $('sizeMenu'), sizeBtn = $('sizeBtn');
+  function renderSizeMenu() {
+    sizeMenu.innerHTML = '';
+    for (const [key, w, h] of SIZE_PRESETS) {
+      const b = document.createElement('button');
+      b.setAttribute('role', 'menuitem');
+      b.innerHTML = `<span>${t(key)}</span><small>${w ? `${w} × ${h}` : ''}</small>`;
+      if (w && Math.round(boxW) === w && Math.round(boxH) === h) b.classList.add('current');
+      b.addEventListener('click', () => {
+        sizeMenu.hidden = true;
+        if (!w) { if (sizeMode !== 'max') toggleSizeMode('max'); return; }
+        if (w === W && h === H) { resetAll(); return; }  // 標準の大きさ = リセットと同じ
+        setPreset(w, h, key === 'sizeTall' ? 'tall' : 'preset');
+      });
+      sizeMenu.appendChild(b);
+    }
+  }
+  sizeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (sizeMenu.hidden) renderSizeMenu();
+    sizeMenu.hidden = !sizeMenu.hidden;
+  });
+  // メニューの外を押すか Esc で閉じる
+  addEventListener('pointerdown', (e) => {
+    if (!sizeMenu.hidden && !sizeMenu.contains(e.target) && e.target !== sizeBtn) sizeMenu.hidden = true;
+  }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') sizeMenu.hidden = true; });
+
+  function resetAll() {
+    sizeMode = 'normal';
+    setSize(W, H, true);
+    turnTo(0, 0, 1);
+  }
+
+  // 右下の角のつまみ。箱を傾けていても、マウスの動きを面の上の動きに直して大きさを変える
+  function addResizeGrip(face) {
+    const grip = document.createElement('div');
+    grip.className = 'resize-grip';
+    grip.dataset.i18nTitle = 'resizeTip';
+    grip.title = t('resizeTip');
+    // 面の上の 3 点 (右下の角、そこから左に 100px、上に 100px) が画面のどこに映るかで、
+    // つまみのあたりでの面の向きを調べる (遠近感があるので、つまみの近くで測る)
+    const probes = [[0, 0], [100, 0], [0, 100]].map(([x, y]) => {
+      const p = document.createElement('div');
+      p.className = 'resize-probe';
+      p.style.right = `${x}px`; p.style.bottom = `${y}px`;
+      face.appendChild(p);
+      return p;
+    });
+    face.appendChild(grip);
+    let last = null;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      grip.setPointerCapture(e.pointerId);
+      last = { x: e.clientX, y: e.clientY };
+      sizeMode = 'normal';
+      document.body.classList.add('resizing');
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!last) return;
+      const [p0, p1, p2] = probes.map((p) => p.getBoundingClientRect());
+      const ex = [(p0.x - p1.x) / 100, (p0.y - p1.y) / 100], ey = [(p0.x - p2.x) / 100, (p0.y - p2.y) / 100];
+      const dx = e.clientX - last.x, dy = e.clientY - last.y;
+      const det = ex[0] * ey[1] - ex[1] * ey[0];
+      last = { x: e.clientX, y: e.clientY };
+      if (Math.abs(det) < 1e-3) return;  // 面が真横を向いているときは動かせない
+      const u = (dx * ey[1] - dy * ey[0]) / det, v = (ex[0] * dy - ex[1] * dx) / det;
+      // 箱は中心を基準に広がるので、角がカーソルについてくるよう 2 倍にする
+      setSize(boxW + u * 2, boxH + v * 2);
+    });
+    const end = () => { last = null; document.body.classList.remove('resizing'); };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+  }
+
   // 平行回転のドラッグ: 画面の中心からこの距離より外の背景をつかむと平行回転になる。
   // 縮小して箱が小さいときは、その分内側の円も小さくする
   let dragMode = 'tilt', lastAngle = 0;
@@ -2227,7 +2416,7 @@
   }
 
   // 操作できる要素やページ表示部分の上では回転しない
-  const interactive = (el) => el.closest('input, button, a, .panes, .tab');
+  const interactive = (el) => el.closest('input, button, a, .panes, .tab, .resize-grip');
 
   // ---------- tab drag ----------
   // タブをドラッグして、別のブラウザや閉じている側面へ移動する
@@ -2278,7 +2467,7 @@
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!pinch || touches.size < 2) return;
     e.stopImmediatePropagation();
-    zoom = Math.min(2.5, Math.max(0.3, pinch.z0 * touchDist() / pinch.d0));
+    zoom = Math.min(2.5, Math.max(0.15, pinch.z0 * touchDist() / pinch.d0));
     rz = pinch.r0 + angleDiff(touchAngle(), pinch.a0);  // ひねった分だけ平行回転
     apply();
   });
@@ -2394,14 +2583,14 @@
     // 閉じている面のダブルクリックは「開く」操作なので、向きのリセットはしない
     const face = e.target.closest(OPENABLE);
     if (interactive(e.target) || (face && !face.classList.contains('browser'))) return;
-    turnTo(0, 0, 1);
+    resetAll();
   });
 
   scene.addEventListener('wheel', (e) => {
     // Ctrl+ホイール / ピンチは、どこでもブラウザ自体の拡大ではなく 3D の拡大縮小にする
     if (!e.ctrlKey && interactive(e.target)) return;
     e.preventDefault();
-    zoom = Math.min(2.5, Math.max(0.3, zoom * Math.exp(-e.deltaY * 0.001)));
+    zoom = Math.min(2.5, Math.max(0.15, zoom * Math.exp(-e.deltaY * 0.001)));
     apply();
   }, { passive: false });
 
@@ -2434,7 +2623,7 @@
   }
 
   $('seeThrough').addEventListener('click', () => document.body.classList.toggle('see-through'));
-  $('resetView').addEventListener('click', () => turnTo(0, 0, 1));
+  $('resetView').addEventListener('click', () => resetAll());
 
   // 全画面表示。iPhone の Safari は動画以外の全画面に対応していないので、そのときはボタンを出さない
   const root = document.documentElement;
@@ -2520,7 +2709,7 @@
       apply();
     }
     if (zoomDir) {
-      zoom = Math.min(2.5, Math.max(0.3, zoom * Math.exp(zoomDir * 0.8 * dt)));
+      zoom = Math.min(2.5, Math.max(0.15, zoom * Math.exp(zoomDir * 0.8 * dt)));
       target = null;
       apply();
     }
@@ -2612,7 +2801,22 @@
     pad.hidden = !on;
     padShow.hidden = on;
     if (remember) store.set('3d-browser-pad-hidden', on ? '' : '1');
+    layoutPad();
   }
+  // パネルが右下のボタンと重なるなら、ボタンの上に持ち上げる
+  function layoutPad() {
+    if (pad.hidden) return;
+    pad.style.bottom = padHint.style.bottom = '';
+    const a = pad.getBoundingClientRect(), c = document.getElementById('controls').getBoundingClientRect();
+    if (a.right + 8 > c.left && a.bottom > c.top - 8) {
+      // ボタンの列 (折り返して 2 段になることもある) のすぐ上に置く
+      const bottom = innerHeight - c.top + 10;
+      pad.style.bottom = `${bottom}px`;
+      padHint.style.bottom = `${bottom + a.height + 12}px`;
+    }
+  }
+  addEventListener('resize', layoutPad);
+  onLangChange.push(layoutPad);  // 言語でボタンの幅が変わる
   pad.querySelector('.pad-hide').addEventListener('click', () => showPad(false));
   padShow.addEventListener('click', () => showPad(true));
   padShow.dataset.i18nTitle = 'showPad';

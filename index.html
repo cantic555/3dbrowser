@@ -642,6 +642,12 @@
     resultsMeta: [(n) => `Wikipedia の検索結果 ・ ${n} 件`, (n) => `Wikipedia results · ${n}`],
     searchFailed: [(e) => `検索に失敗しました: ${e}`, (e) => `Search failed: ${e}`],
     infoTitle: ['3D Browser について', 'About 3D Browser'],
+    // 説明ページの「こんなページも開けます」
+    infoThis: ['この 3D Browser 自身 (ブラウザの中のブラウザの中の…)', 'This 3D Browser itself (a browser in a browser in a…)'],
+    infoDraw: ['お絵描き', 'Drawing'],
+    infoHorror: ['ちょっと怖い? (Esc でスキップ)', 'A little scary? (Esc to skip)'],
+    infoKobito: ['小人が暮らしている。回すとあたふたする', 'Tiny Folks live here. Rotate the browser and watch them panic'],
+    infoSelf: ['このページ', 'This page'],
     // 小人のセリフ
     panicWords: [['わー', 'きゃー', 'ひぇ', 'おっとっと', 'わわわ'], ['Whoa!', 'Eek!', 'Yikes!', 'Oops!', 'Wah!']],
     fallWords: [['うわー', 'あ〜れ〜', 'たすけて〜', 'ひゅ〜', 'うわぁぁぁ', 'おちる〜'],
@@ -692,6 +698,7 @@
       browser: null,
       history: [null], index: 0,
       title: t('newTab'), addr: '',
+      cleanups: [],  // 表示中のページの後片付け (disposePage で呼ぶ)
       label: document.createElement('div'),
       pane: document.createElement('div'),
     };
@@ -712,12 +719,24 @@
     tab.browser?.sync(tab);
   }
 
-  // アドレスバーで開ける内蔵ページ
-  // about:this はこのサイト自身 (入れ子になる)
-  const INTERNAL = {
-    'about:this': 'self', 'about:draw': 'draw', 'about:horror': 'horror', 'about:info': 'info',
-    'about:kobito': 'kobito',
-  };
+  // ---------- 内蔵ページ ----------
+  // about:<id> で開けるページ。registerPage で登録すると、アドレスバーで開けるようになり、
+  // menu: true ならスタートページのボタンと説明ページの一覧にも出る
+  //   id: about:<id> の <id>
+  //   title: タブ名 (STR のキー、または文字を返す関数)
+  //   info: 説明ページの一覧に出す説明 (STR のキー)
+  //   langRerender: 言語を切り替えたら描き直す (文字だけのページ)。false なら題名だけ変える
+  //   render(tab): ページの中身を tab.pane に作る
+  const PAGES = new Map();
+  function registerPage(def) { PAGES.set(def.id, def); }
+  const pageTitle = (def) => typeof def.title === 'function' ? def.title() : t(def.title);
+  // スタートページと説明ページに並べるページ (about:this と about:info は決まった位置に置く)
+  const menuPages = () => [...PAGES.values()].filter((d) => d.menu);
+
+  // ページを離れるとき (別のページへ移る・タブを閉じる) に、ページが登録した後片付けを呼ぶ
+  function disposePage(tab) {
+    for (const fn of tab.cleanups.splice(0)) fn();
+  }
 
   function navigate(tab, input, push = true) {
     const s = input.trim();
@@ -727,7 +746,8 @@
       setTall();
       return navigate(tab, 'https://ケノン.com/', push);
     }
-    const entry = INTERNAL[s] ? { type: INTERNAL[s] }
+    const id = s.match(/^about:([\w-]+)$/i)?.[1].toLowerCase();
+    const entry = PAGES.has(id) ? { type: 'page', id }
       : isUrl(s) ? { type: 'url', value: /^(https?|file):\/\//i.test(s) ? s : 'https://' + s }
       : { type: 'search', value: s };
     if (push) {
@@ -740,16 +760,18 @@
 
   function render(tab) {
     const entry = tab.history[tab.index];
+    disposePage(tab);
     tab.pane.innerHTML = '';
     if (!entry) renderStart(tab);
-    else if (entry.type === 'draw') renderDraw(tab);
-    else if (entry.type === 'horror') renderHorror(tab);
-    else if (entry.type === 'self') renderSelf(tab);
-    else if (entry.type === 'info') renderInfo(tab);
-    else if (entry.type === 'kobito') renderKobito(tab);
+    else if (entry.type === 'page') renderPage(tab, PAGES.get(entry.id));
     else if (entry.type === 'url') renderUrl(tab, entry.value);
     else renderSearch(tab, entry.value);
     tab.browser?.sync(tab);
+  }
+
+  function renderPage(tab, def) {
+    setMeta(tab, pageTitle(def), `about:${def.id}`);
+    def.render(tab);
   }
 
   function renderStart(tab) {
@@ -764,7 +786,7 @@
           ${[[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], [t('chipTall'), 'about:tall'], ['3D Browser', 'about:this'],
              ['zoomquilt', 'https://zoomquilt.org/'],
              ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
-             [t('draw'), 'about:draw'], [t('horror'), 'about:horror'], [t('kobito'), 'about:kobito'], [t('info'), 'about:info']]
+             ...menuPages().map((d) => [pageTitle(d), `about:${d.id}`]), [t('info'), 'about:info']]
             .map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('')}
         </div>
       </div>`;
@@ -775,7 +797,6 @@
 
   // ドラッグで線を引くだけのお絵描き。右上のボタンで全部消す
   function renderDraw(tab) {
-    setMeta(tab, t('draw'), 'about:draw');
     const canvas = document.createElement('canvas');
     canvas.className = 'draw';
     tab.pane.appendChild(canvas);
@@ -906,6 +927,7 @@
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
   }
+  registerPage({ id: 'draw', title: 'draw', info: 'infoDraw', menu: true, render: renderDraw });
 
   // ---------- about:horror ----------
   // 長い黒髪の幽霊が地面を這って近づき、画面の縁をつかんで手を伸ばしてくる……と思ったら花をくれる
@@ -1014,7 +1036,6 @@
   const STOP = Symbol('stop');
 
   function renderHorror(tab) {
-    setMeta(tab, t('horror'), 'about:horror');
     const page = document.createElement('div');
     page.className = 'horror';
     page.innerHTML = `
@@ -1032,6 +1053,7 @@
     tab.pane.appendChild(page);
     playHorror(tab, page);
   }
+  registerPage({ id: 'horror', title: 'horror', info: 'infoHorror', menu: true, render: renderHorror });
 
   // 砂嵐。opacity で強さを変える
   function startNoise(canvas, alive) {
@@ -1285,7 +1307,6 @@
   }
 
   function renderKobito(tab) {
-    setMeta(tab, t('kobito'), 'about:kobito');
     const page = document.createElement('div');
     page.className = 'kobito';
     const canvas = document.createElement('canvas');
@@ -1913,6 +1934,7 @@
       draw();
     })(performance.now());
   }
+  registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, render: renderKobito });
 
   // ---------- about:info ----------
   // 署名・ライセンス・ソースコード (GitHub はほかのサイトの中に表示できないので新しいタブで開く)
@@ -1923,7 +1945,10 @@
           ・ <a href="${REPO_URL}/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
           ・ <a href="${REPO_URL}" target="_blank" rel="noopener">${sourceLabel} (GitHub ↗)</a>
         </footer>`;
-  const INFO_JA = `
+  // 開けるページの一覧 (about:this、登録したページ、about:info の順)
+  const pageRows = () => [PAGES.get('this'), ...menuPages(), PAGES.get('info')]
+    .map((d) => `<dt><a href="#" data-q="about:${d.id}">about:${d.id}</a></dt><dd>${t(d.info)}</dd>`).join('');
+  const INFO_JA = () => `
       <article class="info">
         <header>
           <h1>3D <span>Browser</span> について</h1>
@@ -1946,11 +1971,7 @@
         <section>
           <h2>こんなページも開けます</h2>
           <dl>
-            <dt><a href="#" data-q="about:this">about:this</a></dt><dd>この 3D Browser 自身 (ブラウザの中のブラウザの中の…)</dd>
-            <dt><a href="#" data-q="about:draw">about:draw</a></dt><dd>お絵描き</dd>
-            <dt><a href="#" data-q="about:horror">about:horror</a></dt><dd>ちょっと怖い? (Esc でスキップ)</dd>
-            <dt><a href="#" data-q="about:kobito">about:kobito</a></dt><dd>小人が暮らしている。回すとあたふたする</dd>
-            <dt><a href="#" data-q="about:info">about:info</a></dt><dd>このページ</dd>
+            ${pageRows()}
           </dl>
           <h2>注意</h2>
           <ul>
@@ -1959,7 +1980,7 @@
           </ul>
         </section>${infoFooter('ソースコード')}
       </article>`;
-  const INFO_EN = `
+  const INFO_EN = () => `
       <article class="info">
         <header>
           <h1>About 3D <span>Browser</span></h1>
@@ -1982,11 +2003,7 @@
         <section>
           <h2>Pages you can open</h2>
           <dl>
-            <dt><a href="#" data-q="about:this">about:this</a></dt><dd>This 3D Browser itself (a browser in a browser in a…)</dd>
-            <dt><a href="#" data-q="about:draw">about:draw</a></dt><dd>Drawing</dd>
-            <dt><a href="#" data-q="about:horror">about:horror</a></dt><dd>A little scary? (Esc to skip)</dd>
-            <dt><a href="#" data-q="about:kobito">about:kobito</a></dt><dd>Tiny Folks live here. Rotate the browser and watch them panic</dd>
-            <dt><a href="#" data-q="about:info">about:info</a></dt><dd>This page</dd>
+            ${pageRows()}
           </dl>
           <h2>Notes</h2>
           <ul>
@@ -1996,10 +2013,9 @@
         </section>${infoFooter('Source code')}
       </article>`;
   function renderInfo(tab) {
-    setMeta(tab, t('infoTitle'), 'about:info');
     const page = document.createElement('div');
     page.className = 'page';
-    page.innerHTML = lang === 'ja' ? INFO_JA : INFO_EN;
+    page.innerHTML = lang === 'ja' ? INFO_JA() : INFO_EN();
     // about: のリンクはこのタブの中で開く
     page.querySelectorAll('a[data-q]').forEach((a) => a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -2007,12 +2023,14 @@
     }));
     tab.pane.appendChild(page);
   }
+  registerPage({ id: 'info', title: 'infoTitle', info: 'infoSelf', langRerender: true, render: renderInfo });
 
   // 自分自身を 1 段深い階層として開く。アドレスバーには長いファイルのパスではなく about:this と出す
   function renderSelf(tab) {
     renderUrl(tab, selfUrl(depth + 1));
     setMeta(tab, '3D Browser', 'about:this');
   }
+  registerPage({ id: 'this', title: () => '3D Browser', info: 'infoThis', render: renderSelf });
 
   function renderUrl(tab, url) {
     // new URL() は日本語ドメインを xn--… に変換してしまうので、文字列から取り出す
@@ -2159,6 +2177,7 @@
       },
 
       closeTab(tab) {
+        disposePage(tab);
         browser.removeTab(tab);
       },
 
@@ -2222,6 +2241,7 @@
 
   // ブラウザを閉じて元の面に戻す。タブが残っていれば一緒に捨てる
   function closeFace(face) {
+    for (const tab of face._browser?.tabs || []) disposePage(tab);
     face.classList.remove('browser');
     face._browser = null;
     for (const el of [...face.children]) {
@@ -2682,11 +2702,9 @@
     for (const label of document.querySelectorAll('.tab')) {
       const tab = label._tab, entry = tab?.history[tab.index];
       if (!tab) continue;
-      if (!entry || entry.type === 'info' || entry.type === 'search') render(tab);
-      else if (entry.type === 'draw') setMeta(tab, t('draw'), tab.addr);
-      else if (entry.type === 'horror') setMeta(tab, t('horror'), tab.addr);
-      else if (entry.type === 'kobito') setMeta(tab, t('kobito'), tab.addr);
-      else if (entry.type === 'self') setMeta(tab, '3D Browser', tab.addr);
+      const def = entry?.type === 'page' && PAGES.get(entry.id);
+      if (!entry || entry.type === 'search' || def?.langRerender) render(tab);
+      else if (def) setMeta(tab, pageTitle(def), tab.addr);
     }
   }
   langBtn.addEventListener('click', () => setLang(lang === 'ja' ? 'en' : 'ja'));

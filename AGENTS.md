@@ -61,7 +61,7 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 - 静的な要素は `data-i18n` / `data-i18n-title` / `data-i18n-placeholder` を付けると `applyLang()` で切り替わる。
 
 ### localStorage のキー
-`3d-browser-lang` / `3d-browser-pad-hidden` / `3d-browser-pad-used` / `3d-browser-drag-hinted` / `3d-browser-kobito-flowers`
+`3d-browser-lang` / `3d-browser-pad-hidden` / `3d-browser-pad-used` / `3d-browser-drag-hinted` / `3d-browser-kobito-flowers` / `3d-browser-kobito-lines`
 
 ## 作業のルール
 

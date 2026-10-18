@@ -2,7 +2,16 @@
 (() => {
   const CSS = `
   .kobito { position: absolute; inset: 0; }
-  .kobito canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .kobito canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  /* 線を全部消すボタン (線があるときだけ出す)。小人は下にいるので右上に置く */
+  .kobito-clear {
+    position: absolute; right: 12px; top: 12px;
+    width: 36px; height: 36px; padding: 0; border-radius: 50%;
+    display: grid; place-items: center;
+    border: 1px solid #dde0e6; background: #f7f8fa; color: #555; cursor: pointer;
+  }
+  .kobito-clear[hidden] { display: none; }
+  .kobito-clear:hover { background: #eef1f8; border-color: #c9d3ee; }
   .fall3d { position: absolute; pointer-events: none; }
   .fall3d canvas { display: block; width: 100%; height: 100%; }
 `;
@@ -29,7 +38,8 @@
     pokeWords: [['ひゃっ', 'なに？', 'くすぐったい', '！', 'やめて〜', 'えへへ'],
       ['Eep!', 'What?', 'That tickles', '!', 'Stop it~', 'Hehe']],
     liftWords: [['わっ', 'はなして〜'], ['Whoa!', 'Put me down~']],
-    infoKobito: ['小人が暮らしている。回すとあたふたする', 'Tiny Folks live here. Rotate the browser and watch them panic'],
+    linesClear: ['線を全部消す (1 本だけ消すときは線をタップ)', 'Clear all lines (tap a line to remove just that one)'],
+    infoKobito: ['小人が暮らしている。回すとあたふたする。線を引くとその上を歩く', 'Tiny Folks live here. Rotate and watch them panic. Draw lines for them to walk on'],
   };
 
   // ブラウザの中で小人が暮らしている放置鑑賞ページ。
@@ -41,6 +51,9 @@
   const KR = KR0 * KS;      // 当たり判定に使う大きさ
   const GRAVITY = 900;  // px/s²
   const FALL_TIME = 4;  // 画面から落ちて消えるまでの秒数
+  const LINE_W = 4;     // 引いた線の太さ
+  const MAX_LINES = 15; // 線の本数の上限 (越えたら古い線から消える)
+  const LINES_KEY = '3d-browser-kobito-lines';
 
   function renderKobito(tab, api) {
     const { t, pick } = api;
@@ -224,19 +237,32 @@
           p.ang += d * Math.min(1, dt * 6);
           continue;
         }
+        const calm = p.state !== 'panic' && p.state !== 'dizzy';
         if (upright) {
-          p.vx += g.x * GRAVITY * dt;
-          p.vy += g.y * GRAVITY * dt;
+          let ax = g.x * GRAVITY * dt, ay = g.y * GRAVITY * dt;
+          // ゆるい坂 (線) の上では踏ん張って、坂に沿って滑り落ちない
+          if (calm && p.grounded && p.groundN) {
+            const [nx, ny] = p.groundN;
+            if (-(nx * gx + ny * gy) > 0.8) {
+              const an = ax * nx + ay * ny;
+              ax = nx * an; ay = ny * an;
+            }
+          }
+          p.vx += ax;
+          p.vy += ay;
         }
         // 歩く
-        const calm = p.state !== 'panic' && p.state !== 'dizzy';
         if (calm && p.state === 'walk') {
           if (upright && p.grounded) {
-            // 地面に沿って歩く
-            const tx = gy * p.dir, ty = -gx * p.dir;  // dir = +1 で体の右 (顔を向けている側) へ
+            // 地面 (線の坂も) に沿って歩く。dir = +1 で体の右 (顔を向けている側) へ
+            const [nx, ny] = p.groundN || [-gx, -gy];
+            let tx = -ny, ty = nx;
+            if ((tx * gy - ty * gx) * p.dir < 0) { tx = -tx; ty = -ty; }
             const sp = p.flowerRun ? 60 : 28;  // 花に向かうときは急いで
-            p.vx += (tx * sp - p.vx) * Math.min(1, dt * 6) * Math.abs(tx);
-            p.vy += (ty * sp - p.vy) * Math.min(1, dt * 6) * Math.abs(ty);
+            const vt = p.vx * tx + p.vy * ty;
+            const k = (sp - vt) * Math.min(1, dt * 6);
+            p.vx += tx * k;
+            p.vy += ty * k;
           } else if (!upright) {
             // 上から見た形: どの向きにも歩ける
             p.heading += rnd(-1.5, 1.5) * dt;
@@ -249,11 +275,16 @@
           p.vy *= 1 - Math.min(1, dt * 6);
         }
 
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
+        // 動かす。速いときに線をすり抜けないよう、何回かに分けて動かしながら線との当たり判定をする
+        const contacts = [];
+        const n = Math.max(1, Math.ceil(Math.hypot(p.vx, p.vy) * dt / (KR * 0.5)));
+        for (let i = 0; i < n; i++) {
+          p.x += p.vx * dt / n;
+          p.y += p.vy * dt / n;
+          collideLines(p, KR, contacts, upright && { x: gx, y: gy });
+        }
 
         // 壁 (画面の端) との当たり判定
-        const contacts = [];
         if (p.x < KR) { p.x = KR; if (p.vx < 0) p.vx *= -0.25; contacts.push([1, 0]); }
         if (p.x > W - KR) { p.x = W - KR; if (p.vx > 0) p.vx *= -0.25; contacts.push([-1, 0]); }
         if (p.y < KR) { p.y = KR; if (p.vy < 0) p.vy *= -0.25; contacts.push([0, 1]); }
@@ -261,8 +292,14 @@
         if (!upright && contacts.length) {
           p.heading = Math.atan2(p.vy, p.vx) + Math.PI + rnd(-0.5, 0.5);
         }
-        // 足元が地面 (重力の向きにある壁) か
-        p.grounded = upright && contacts.some(([nx, ny]) => -(nx * gx + ny * gy) > 0.55);
+        // 足元が地面 (重力の向きにある壁や線) か。一番「床らしい」ものを足元とする
+        let ground = null, best = 0.55;
+        for (const c of contacts) {
+          const d = -(c[0] * gx + c[1] * gy);
+          if (d > best) { best = d; ground = c; }
+        }
+        p.grounded = upright && !!ground;
+        p.groundN = p.grounded ? ground : null;
         if (p.grounded) {
           // 地面の摩擦で踏ん張る。坂がきついと踏ん張りきれずにずるずる滑る。
           // 転がっている間も少しずつ止まる (摩擦がないと、仲間に押し返されたまま永遠に回り続ける)
@@ -493,6 +530,7 @@
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, W, H);
       for (const f of planted) drawFlower(f.x * W, H, KS * 1.9);  // 小人より少し背が高く、頭の上から花がのぞく
+      drawLines();
       if (looseFlower) drawFlower(looseFlower.x, looseFlower.y + 8, KS * 1.1);
       for (const p of people) drawPerson(p, upright);
     }
@@ -512,13 +550,22 @@
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       const p = hit(e.offsetX, e.offsetY);
-      if (!p) return;
       canvas.setPointerCapture(e.pointerId);
+      if (!p) {  // 何もない所: 線を引き始める
+        stroke = [[e.offsetX, e.offsetY]];
+        return;
+      }
       held = { p, x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, moved: false, vx: 0, vy: 0, t: performance.now() };
     });
     canvas.addEventListener('pointermove', (e) => {
+      if (stroke) {
+        const [lx, ly] = stroke[stroke.length - 1];
+        if (Math.hypot(e.offsetX - lx, e.offsetY - ly) >= 3) stroke.push([e.offsetX, e.offsetY]);
+        return;
+      }
       if (!held) {
-        canvas.style.cursor = hit(e.offsetX, e.offsetY) ? 'grab' : '';
+        // 小人の上はつまむ、線の上は消せる、何もない所は線を引ける
+        canvas.style.cursor = hit(e.offsetX, e.offsetY) ? 'grab' : lineAt(e.offsetX, e.offsetY) ? 'pointer' : '';
         return;
       }
       const { p } = held;
@@ -539,7 +586,13 @@
       p.x = Math.min(W - KR, Math.max(KR, e.offsetX));
       p.y = Math.min(H - KR, Math.max(KR, e.offsetY + KR * 0.9));
     });
-    const release = () => {
+    const release = (e) => {
+      if (stroke) {
+        const pts = stroke;
+        stroke = null;
+        if (e.type === 'pointerup') finishStroke(pts);
+        return;
+      }
       if (!held) return;
       const { p, moved } = held;
       if (!moved) {
@@ -550,9 +603,11 @@
         p.state = 'wave'; p.timer = 1.2;
         p.hopT = 0.8;  // 跳ねている間はあたふたしない
       } else {
-        // 離すと落ちる (投げた勢いも少し残す)
-        p.vx = Math.max(-600, Math.min(600, held.vx * 0.6));
-        p.vy = Math.max(-600, Math.min(600, held.vy * 0.6));
+        // 離すと落ちる (投げた勢いも少し残す)。止めてから離したときは勢いを残さない
+        // (動かしていない間は pointermove が来ないので、最後に動かしたときからの時間で弱める)
+        const keep = 0.6 * Math.max(0, 1 - (performance.now() - held.t) / 100);
+        p.vx = Math.max(-600, Math.min(600, held.vx * keep));
+        p.vy = Math.max(-600, Math.min(600, held.vy * keep));
         p.state = 'panic'; p.timer = 0.6; p.panicT = 0;
       }
       held = null;
@@ -560,6 +615,171 @@
     };
     canvas.addEventListener('pointerup', release);
     canvas.addEventListener('pointercancel', release);
+
+    // ---------- 引いた線 ----------
+    // 何もない所をドラッグすると線を引ける。線は床にも壁にもなり、小人はその上を歩く。
+    // 線をタップするとその線だけ消える。引いた線は保存して、次に開いたときも残っている
+    let lines = [];           // 線 (点の配列。座標は幅・高さに対する割合)
+    try { lines = JSON.parse(localStorage.getItem(LINES_KEY) || '[]'); } catch {}
+    let segs = [];            // 当たり判定用の線分 (表示の座標) { ax, ay, dx, dy, len2, line }
+    let segsFor = '';         // segs を作ったときの大きさ
+    let stroke = null;        // 引いている途中の線 (表示の座標)
+    const fading = [];        // 消えていく線 { pts, t }
+    const saveLines = () => { try { localStorage.setItem(LINES_KEY, JSON.stringify(lines)); } catch {} };
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'kobito-clear';
+    clearBtn.dataset.i18nTitle = 'linesClear';
+    clearBtn.title = t('linesClear');
+    // ゴミ箱アイコン
+    clearBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>`;
+    clearBtn.addEventListener('click', () => {
+      for (const l of [...lines]) removeLine(l);
+    });
+    page.appendChild(clearBtn);
+
+    function linesChanged() {
+      segsFor = '';
+      clearBtn.hidden = !lines.length;
+      saveLines();
+    }
+    clearBtn.hidden = !lines.length;
+
+    // 表示の大きさに合わせて、線を当たり判定用の線分にする
+    function buildSegs() {
+      if (segsFor === `${W}x${H}`) return;
+      segsFor = `${W}x${H}`;
+      segs = [];
+      for (const l of lines) {
+        for (let i = 1; i < l.length; i++) {
+          const ax = l[i - 1][0] * W, ay = l[i - 1][1] * H;
+          const dx = l[i][0] * W - ax, dy = l[i][1] * H - ay;
+          const len2 = dx * dx + dy * dy;
+          if (len2 > 0.01) segs.push({ ax, ay, dx, dy, len2, line: l });
+        }
+      }
+    }
+
+    // 線分の上で (x, y) に一番近い点 (k は線分の中の位置。0 と 1 は端)
+    function nearest(sg, x, y) {
+      const k = Math.max(0, Math.min(1, ((x - sg.ax) * sg.dx + (y - sg.ay) * sg.dy) / sg.len2));
+      return [sg.ax + sg.dx * k, sg.ay + sg.dy * k, k];
+    }
+
+    // 半径 r の丸 o ({ x, y, vx, vy }) が線にめり込んでいたら押し出し、線に向かう速さを消す (少し跳ね返る)。
+    // 触れた線の向き (線から o へ向かう向き) を contacts に入れる。
+    // 重力の向き g を渡すと、足元にある線の端は段差として床扱いにする (地面から引いた坂に上れるように)
+    function collideLines(o, r, contacts, g) {
+      buildSegs();
+      const rr = r + LINE_W / 2;
+      for (const sg of segs) {
+        const [cx, cy, k] = nearest(sg, o.x, o.y);
+        let nx = o.x - cx, ny = o.y - cy;
+        const d = Math.hypot(nx, ny);
+        if (d >= rr) continue;
+        if (d < 1e-6) {  // ちょうど線の上: 線に垂直な向きに出す
+          const l = Math.sqrt(sg.len2);
+          nx = -sg.dy / l; ny = sg.dx / l;
+        } else {
+          nx /= d; ny /= d;
+        }
+        // 足元にある線の端は段差: 横に押し返さず、重力と逆向きに持ち上げて上に乗せる
+        if (g && (k === 0 || k === 1) && -(nx * g.x + ny * g.y) > 0.3) {
+          const a = (cx - o.x) * g.x + (cy - o.y) * g.y;  // 端が中心からどれだけ下にあるか
+          const h = -a + Math.sqrt(Math.max(0, a * a + rr * rr - d * d));
+          o.x -= g.x * h;
+          o.y -= g.y * h;
+          const vg = o.vx * g.x + o.vy * g.y;
+          if (vg > 0) { o.vx -= g.x * vg; o.vy -= g.y * vg; }
+          contacts?.push([-g.x, -g.y]);
+          continue;
+        }
+        o.x += nx * (rr - d);
+        o.y += ny * (rr - d);
+        const vn = o.vx * nx + o.vy * ny;
+        if (vn < 0) { o.vx -= nx * vn * 1.25; o.vy -= ny * vn * 1.25; }
+        contacts?.push([nx, ny]);
+      }
+    }
+
+    // (x, y) の近くにある線 (タップで消す用)
+    function lineAt(x, y) {
+      buildSegs();
+      let found = null, bd = 12;
+      for (const sg of segs) {
+        const [cx, cy] = nearest(sg, x, y);
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < bd) { bd = d; found = sg.line; }
+      }
+      return found;
+    }
+
+    function removeLine(l) {
+      lines.splice(lines.indexOf(l), 1);
+      fading.push({ pts: l, t: 0 });
+      linesChanged();
+    }
+
+    // 線を引き終えたとき。短すぎるのはタップとみなして、その場所の線を消す
+    function finishStroke(pts) {
+      let len = 0;
+      for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (len < 8) {
+        const l = lineAt(pts[0][0], pts[0][1]);
+        if (l) removeLine(l);
+        return;
+      }
+      const simple = simplify(pts, 1.5);
+      lines.push(simple.map(([x, y]) => [+(x / W).toFixed(4), +(y / H).toFixed(4)]));
+      while (lines.length > MAX_LINES) removeLine(lines[0]);
+      linesChanged();
+    }
+
+    // 折れ線の点を減らす (Ramer–Douglas–Peucker)。eps より小さいずれは無視する
+    function simplify(pts, eps) {
+      if (pts.length < 3) return pts;
+      const [ax, ay] = pts[0], [bx, by] = pts[pts.length - 1];
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      let far = 0, idx = 0;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const d = Math.abs((pts[i][0] - ax) * dy - (pts[i][1] - ay) * dx) / len;
+        if (d > far) { far = d; idx = i; }
+      }
+      if (far <= eps) return [pts[0], pts[pts.length - 1]];
+      return [...simplify(pts.slice(0, idx + 1), eps).slice(0, -1), ...simplify(pts.slice(idx), eps)];
+    }
+
+    function strokePath(pts, toPx) {
+      ctx.beginPath();
+      pts.forEach((pt, i) => {
+        const [x, y] = toPx ? [pt[0] * W, pt[1] * H] : pt;
+        ctx[i ? 'lineTo' : 'moveTo'](x, y);
+      });
+      ctx.stroke();
+    }
+
+    function drawLines() {
+      ctx.save();
+      ctx.lineCap = ctx.lineJoin = 'round';
+      ctx.lineWidth = LINE_W;
+      ctx.strokeStyle = '#5b6170';
+      for (const l of lines) strokePath(l, true);
+      // 消えていく線
+      for (const fl of [...fading]) {
+        fl.t += 1 / 60;
+        if (fl.t >= 0.3) { fading.splice(fading.indexOf(fl), 1); continue; }
+        ctx.globalAlpha = 1 - fl.t / 0.3;
+        strokePath(fl.pts, true);
+      }
+      // 引いている途中の線
+      if (stroke) {
+        ctx.globalAlpha = 0.6;
+        strokePath(stroke, false);
+      }
+      ctx.restore();
+    }
 
     // ---------- もらった花 ----------
     // 落とした花は地面に落ち、小人が集まって 1 人が拾い、しばらく掲げてから植える。
@@ -589,6 +809,7 @@
         const f = looseFlower;
         if (upright) { f.vx += g.x * GRAVITY * dt; f.vy += g.y * GRAVITY * dt; }
         f.x += f.vx * dt; f.y += f.vy * dt;
+        collideLines(f, 8);
         if (f.x < 8) { f.x = 8; f.vx = 0; }
         if (f.x > W - 8) { f.x = W - 8; f.vx = 0; }
         if (f.y < 8) { f.y = 8; f.vy = 0; }
@@ -619,7 +840,7 @@
         p.carry -= dt;
         if (p.carry <= 0) {
           p.carry = 0;
-          if (upright && Math.abs(g.y) > Math.abs(g.x) && g.y > 0) {
+          if (upright && Math.abs(g.y) > Math.abs(g.x) && g.y > 0 && p.y > H - KR - 2) {
             planted.push({ x: p.x / W });
             savePlanted();
             say(p, t('flowerPlant'), 1.4);

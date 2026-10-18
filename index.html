@@ -250,8 +250,9 @@
   .side .results { padding: 16px; }
 
   /* 透過モード: 面を半透明にし、裏向きの面も描いて箱の反対側が透けて見えるようにする */
-  body.see-through .face { opacity: .2; backface-visibility: visible; }
-  body.see-through .face.browser { opacity: .55; }
+  /* 不透明度は透過ボタンの長押しで変えられる (--st: ブラウザの面、--st-face: 閉じている面) */
+  body.see-through .face { opacity: var(--st-face, .2); backface-visibility: visible; }
+  body.see-through .face.browser { opacity: var(--st, .55); }
   /* 右下の操作ボタン */
   #controls { position: fixed; right: 16px; bottom: 10px; z-index: 20; display: flex; gap: 8px; }
   #controls button {
@@ -267,6 +268,21 @@
     border: 1px solid rgba(255,255,255,.18); box-shadow: 0 8px 24px rgba(0,0,0,.45);
   }
   #sizeMenu[hidden] { display: none; }
+  /* 透け具合のスライダー (透過ボタンを長押しすると出る。指を離さずに上下に動かす) */
+  #stSlider {
+    position: fixed; z-index: 30; width: 58px; padding: 10px 0 8px; border-radius: 22px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    background: rgba(32,35,42,.95); border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 8px 24px rgba(0,0,0,.45); pointer-events: none;
+  }
+  #stSlider[hidden] { display: none; }
+  #stSlider .st-track { position: relative; width: 6px; height: 160px; border-radius: 3px; background: rgba(255,255,255,.18); }
+  #stSlider .st-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
+  #stSlider .st-knob {
+    position: absolute; left: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+  }
+  #stSlider .st-label { color: #fff; font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
   #sizeMenu button {
     display: flex; justify-content: space-between; gap: 16px; width: 100%;
     padding: 8px 12px; border: 0; border-radius: 8px; background: none;
@@ -435,6 +451,8 @@
 </div>
 <!-- ブラウザの大きさのプリセット (「サイズ」ボタンで開く) -->
 <div id="sizeMenu" role="menu" hidden></div>
+<!-- 透け具合のスライダー (透過ボタンの長押しで出る) -->
+<div id="stSlider" hidden><div class="st-track"><div class="st-fill"></div><div class="st-knob"></div></div><span class="st-label"></span></div>
 <!-- 操作パネル: スティックを倒した方向に回る (遠くまで倒すほど速い) -->
 <div id="pad" hidden>
   <!-- スティックの左側の縁を押す向きに合わせて、上が時計回り、下が反時計回り -->
@@ -499,7 +517,8 @@
     reset: ['リセット', 'Reset'],
     resetTip: ['向きと大きさを正面に戻す', 'Reset the angle and size'],
     seeThrough: ['透過', 'See-through'],
-    seeThroughTip: ['面を半透明にして反対側を透かして見る', 'Make the faces translucent to see the other side'],
+    seeThroughTip: ['面を半透明にして反対側を透かして見る (長押しで透け具合を変える)', 'Make the faces translucent to see the other side (hold to adjust)'],
+    stLabel: [(p) => `透け ${p}%`, (p) => `Clear ${p}%`],
     fullscreen: ['全画面', 'Fullscreen'],
     exitFullscreen: ['全画面を終了', 'Exit fullscreen'],
     fullscreenTip: ['画面いっぱいに表示する', 'Fill the whole screen'],
@@ -1656,7 +1675,74 @@
     requestAnimationFrame(tick);
   }
 
-  $('seeThrough').addEventListener('click', () => document.body.classList.toggle('see-through'));
+  // ---------- 透過 ----------
+  // 短く押すとオン・オフ。長押しすると透け具合のスライダーが出て、指を離さずに上下に動かして選ぶ
+  // (上ほど透ける)。選んだ透け具合は覚えておく
+  const ST_KEY = '3d-browser-see-through';
+  const ST_MIN = 0.15, ST_MAX = 0.95;   // ブラウザの面の不透明度の範囲
+  const ST_FACE = 0.2 / 0.55;           // 閉じている面は、ブラウザの面のこの割合 (少し多めに透ける)
+  const seeBtn = $('seeThrough'), stSlider = $('stSlider');
+  const stTrack = stSlider.querySelector('.st-track');
+  let stOpacity = 0.55;
+  try { const v = parseFloat(localStorage.getItem(ST_KEY)); if (v >= ST_MIN && v <= ST_MAX) stOpacity = v; } catch {}
+  function setSeeThrough(v, save = false) {
+    stOpacity = Math.min(ST_MAX, Math.max(ST_MIN, v));
+    document.documentElement.style.setProperty('--st', stOpacity.toFixed(3));
+    document.documentElement.style.setProperty('--st-face', (stOpacity * ST_FACE).toFixed(3));
+    // スライダーの表示: 上ほど透ける (k = 1 が一番透明)
+    const k = (ST_MAX - stOpacity) / (ST_MAX - ST_MIN);
+    stSlider.querySelector('.st-fill').style.height = `${k * 100}%`;
+    stSlider.querySelector('.st-knob').style.top = `${(1 - k) * 100}%`;
+    stSlider.querySelector('.st-label').textContent = t('stLabel', Math.round((1 - stOpacity) * 100));
+    if (save) try { localStorage.setItem(ST_KEY, stOpacity.toFixed(3)); } catch {}
+  }
+  setSeeThrough(stOpacity);
+  onLangChange.push(() => setSeeThrough(stOpacity));
+
+  let stPress = null;   // 押している間 { timer, long }
+  let stSkipClick = false;  // 長押しのあとの click ではオン・オフしない
+  seeBtn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    seeBtn.setPointerCapture(e.pointerId);
+    stPress = { long: false, timer: setTimeout(() => {
+      stPress.long = true;
+      document.body.classList.add('see-through');  // オフのときに長押ししたらオンにする
+      // つまみが指の高さに来るように、スライダーをボタンの上に置く
+      stSlider.hidden = false;
+      const b = seeBtn.getBoundingClientRect(), w = stSlider.offsetWidth;
+      const k = (ST_MAX - stOpacity) / (ST_MAX - ST_MIN);
+      const trackTop = stTrack.offsetTop, h = stTrack.offsetHeight;
+      let top = e.clientY - trackTop - (1 - k) * h;
+      top = Math.min(b.top - stSlider.offsetHeight - 6, top);  // ボタンには重ねない
+      stSlider.style.left = `${Math.min(innerWidth - w - 8, b.left + b.width / 2 - w / 2)}px`;
+      stSlider.style.top = `${Math.max(8, top)}px`;
+      stPress.y = e.clientY;
+      stPress.k = k;
+      navigator.vibrate?.(15);
+    }, 400) };
+  });
+  seeBtn.addEventListener('pointermove', (e) => {
+    if (!stPress?.long) return;
+    // 押した位置からの上下の動きで変える (上 = 透ける)
+    const k = Math.min(1, Math.max(0, stPress.k + (stPress.y - e.clientY) / stTrack.offsetHeight));
+    setSeeThrough(ST_MAX - k * (ST_MAX - ST_MIN));
+  });
+  const stEnd = () => {
+    if (!stPress) return;
+    clearTimeout(stPress.timer);
+    if (stPress.long) {
+      stSkipClick = true;
+      stSlider.hidden = true;
+      setSeeThrough(stOpacity, true);
+    }
+    stPress = null;
+  };
+  seeBtn.addEventListener('pointerup', stEnd);
+  seeBtn.addEventListener('pointercancel', stEnd);
+  seeBtn.addEventListener('click', () => {
+    if (stSkipClick) { stSkipClick = false; return; }
+    document.body.classList.toggle('see-through');
+  });
   $('resetView').addEventListener('click', () => resetAll());
 
   // 全画面表示。iPhone の Safari は動画以外の全画面に対応していないので、そのときはボタンを出さない

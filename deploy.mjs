@@ -9,11 +9,14 @@ import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const dist = join(root, 'dist');
-const FILES = ['index.html', 'LICENSE'];  // 公開するのはこれだけ (snapshot/ などは含めない)
+const FILES = ['index.html', 'LICENSE', 'plugins'];  // 公開するのはこれだけ (snapshot/ などは含めない)
+
+// plugins/ の中身を index.html の読み込みに反映しておく
+execSync('node build-plugins.mjs', { cwd: root, stdio: 'inherit' });
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist);
-for (const f of FILES) cpSync(join(root, f), join(dist, f));
+for (const f of FILES) cpSync(join(root, f), join(dist, f), { recursive: true });
 console.log(`dist/ に ${FILES.join(', ')} を集めました`);
 
 const args = process.argv.slice(2).join(' ');

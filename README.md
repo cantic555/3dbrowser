@@ -36,7 +36,7 @@ A web app that shows a thick, rotatable 3D browser inside your browser.
 | `about:this` | この 3D Browser 自身（ブラウザの中のブラウザの中の…） |
 | `about:draw` | お絵描き。描いた線を蝶のように飛ばせる |
 | `about:horror` | ちょっと怖い？（Esc でスキップ） |
-| `about:kobito` | 小人（Tiny Folks）が暮らしている。回すとあたふたする。何もない所をドラッグすると線が引けて、小人はその上を歩く（線はドラッグで移動、ダブルクリックで消す） |
+| `about:kobito` | 小人（Tiny Folks）が暮らしている。回すとあたふたする。何もない所をドラッグすると線が引けて、小人はその上を歩く（線はドラッグで移動、ダブルクリックで消す。すばやく振り上げると乗っている小人が飛んでいく） |
 | `about:info` | 操作方法などの説明 |
 
 お絵描き・ホラー・小人はプラグイン（`plugins/*.js`）になっています。作り方は下の「内蔵ページを追加する」を見てください。

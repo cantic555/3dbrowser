@@ -38,6 +38,7 @@
     pokeWords: [['ひゃっ', 'なに？', 'くすぐったい', '！', 'やめて〜', 'えへへ'],
       ['Eep!', 'What?', 'That tickles', '!', 'Stop it~', 'Hehe']],
     liftWords: [['わっ', 'はなして〜'], ['Whoa!', 'Put me down~']],
+    launchWords: [['ひゃっほー', 'とんでるー', 'わーい！', 'ぎゃー'], ['Wheee!', "I'm flying!", 'Yahoo!', 'Aaah!']],
     linesClear: ['線を全部消す (1 本だけ消すときは線をダブルクリック)', 'Clear all lines (double-click a line to remove just that one)'],
     lineTip: ['ドラッグで移動・ダブルクリックで消す', 'Drag to move, double-click to remove'],
     infoKobito: ['小人が暮らしている。回すとあたふたする。線を引くとその上を歩く', 'Tiny Folks live here. Rotate and watch them panic. Draw lines for them to walk on'],
@@ -229,6 +230,7 @@
       updateFallers(dt);
       updateSnack(dt, face);
       updateFlowers(dt, g, upright);
+      checkFlick();
 
       for (const p of people) {
         p.bubbleT -= dt;
@@ -563,7 +565,7 @@
             return;
           }
           lastTap = { line: l, t: now };
-          lineDrag = { line: l, x: e.offsetX, y: e.offsetY, t: now, moved: false };
+          lineDrag = { line: l, x: e.offsetX, y: e.offsetY, t: now, moved: false, vx: 0, vy: 0 };
           canvas.style.cursor = 'grabbing';
           return;
         }
@@ -616,6 +618,7 @@
         return;
       }
       if (lineDrag) {
+        if (performance.now() - lineDrag.t < FLICK_STOP) launchRiders(lineDrag);  // 振りながら離した
         if (lineDrag.moved) linesChanged();  // 動かした位置を保存する
         lineDrag = null;
         canvas.style.cursor = 'grab';
@@ -764,17 +767,55 @@
       dy = Math.max(-Math.min(...ys), Math.min(H - Math.max(...ys), dy));
       for (const pt of l) { pt[0] += dx / W; pt[1] += dy / H; }
       segsFor = '';  // 当たり判定を作り直す
-      const now = performance.now(), speed = Math.hypot(dx, dy) / Math.max(1, now - d.t) * 1000;
-      for (const p of people) {
-        if (p.groundLine !== l || p.state === 'held') continue;
-        if (speed > 900) {  // 速すぎて振り落とされる
-          p.groundLine = null;
-          continue;
+      // 線の速さ (px/秒)。なめらかにして覚えておき、振ったときに乗っている小人へ渡す
+      const now = performance.now(), dtm = Math.max(8, now - d.t) / 1000;
+      d.vx = d.vx * 0.5 + dx / dtm * 0.5;
+      d.vy = d.vy * 0.5 + dy / dtm * 0.5;
+      if (Math.hypot(dx, dy) / dtm > 900) {
+        launchRiders(d);  // 速すぎてしがみついていられない: 勢いのまま飛んでいく
+      } else {
+        for (const p of riders(l)) {
+          p.x = Math.min(W - KR, Math.max(KR, p.x + dx));
+          p.y = Math.min(H - KR, Math.max(KR, p.y + dy));
         }
-        p.x = Math.min(W - KR, Math.max(KR, p.x + dx));
-        p.y = Math.min(H - KR, Math.max(KR, p.y + dy));
       }
       d.x += dx; d.y += dy; d.t = now;
+    }
+
+    // ---------- 線を振って、乗っている小人を飛ばす ----------
+    // 線をすばやく振って止める・離す・速く振りすぎると、乗っている小人が線の勢いのまま飛んでいく。
+    // 下向きの勢いは渡さない (小人は自分の重さで落ちる)
+    const FLICK_STOP = 60;    // この時間 (ミリ秒) 線が動かなければ「止めた」とみなす
+    const FLICK_MIN = 250;    // これより遅く動かしていたときは飛ばさない (px/秒)
+    const FLICK_MAX = 1000;   // 飛ぶ速さの上限 (px/秒)
+    const riders = (l) => people.filter((p) => p.groundLine === l && p.state !== 'held');
+
+    function launchRiders(d) {
+      let vx = d.vx, vy = d.vy;
+      d.vx = d.vy = 0;
+      const g = prevG || { x: 0, y: 1 }, m = Math.hypot(g.x, g.y) || 1;
+      const gx = g.x / m, gy = g.y / m;
+      const down = vx * gx + vy * gy;
+      if (down > 0) { vx -= gx * down; vy -= gy * down; }
+      const v = Math.hypot(vx, vy);
+      if (v < FLICK_MIN) return;
+      const k = Math.min(1, FLICK_MAX / v);
+      for (const p of riders(d.line)) {
+        p.vx = vx * k;
+        p.vy = vy * k;
+        p.groundLine = null;
+        p.grounded = false;
+        p.state = 'panic'; p.timer = 0.8; p.panicT = 0;
+        p.spin += (Math.random() - 0.5) * 0.6;
+        if (p === boss) boss = null;
+        say(p, pick('launchWords'), 1.4);
+      }
+    }
+
+    // 振っていた線を急に止めたか (止めると pointermove が来ないので、毎フレーム時間を見る)
+    function checkFlick() {
+      const d = lineDrag;
+      if (d && d.moved && performance.now() - d.t > FLICK_STOP && (d.vx || d.vy)) launchRiders(d);
     }
 
     function removeLine(l) {

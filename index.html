@@ -276,6 +276,8 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.45); pointer-events: none;
   }
   #stSlider[hidden] { display: none; }
+  /* 動かさずに離したときは出したままにして、スライダーを直接ドラッグできるようにする */
+  #stSlider.open { pointer-events: auto; cursor: ns-resize; touch-action: none; }
   #stSlider .st-track { position: relative; width: 6px; height: 160px; border-radius: 3px; background: rgba(255,255,255,.18); }
   #stSlider .st-fill { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
   #stSlider .st-knob {
@@ -1699,10 +1701,18 @@
   setSeeThrough(stOpacity);
   onLangChange.push(() => setSeeThrough(stOpacity));
 
-  let stPress = null;   // 押している間 { timer, long }
+  let stPress = null;   // 押している間 { timer, long, moved }
   let stSkipClick = false;  // 長押しのあとの click ではオン・オフしない
+  // スライダーを閉じて、選んだ透け具合を覚える
+  function closeSlider() {
+    stSlider.hidden = true;
+    stSlider.classList.remove('open');
+    setSeeThrough(stOpacity, true);
+  }
   seeBtn.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    // 出したままのスライダーがあるときにボタンを押したら、閉じるだけ
+    if (!stSlider.hidden) { closeSlider(); stSkipClick = true; return; }
     seeBtn.setPointerCapture(e.pointerId);
     stPress = { long: false, timer: setTimeout(() => {
       stPress.long = true;
@@ -1723,6 +1733,7 @@
   });
   seeBtn.addEventListener('pointermove', (e) => {
     if (!stPress?.long) return;
+    if (Math.abs(stPress.y - e.clientY) > 3) stPress.moved = true;
     // 押した位置からの上下の動きで変える (上 = 透ける)
     const k = Math.min(1, Math.max(0, stPress.k + (stPress.y - e.clientY) / stTrack.offsetHeight));
     setSeeThrough(ST_MAX - k * (ST_MAX - ST_MIN));
@@ -1732,11 +1743,39 @@
     clearTimeout(stPress.timer);
     if (stPress.long) {
       stSkipClick = true;
-      stSlider.hidden = true;
-      setSeeThrough(stOpacity, true);
+      // 動かしてから離したら閉じる。動かさずに離したら出したままにして、スライダーを直接動かせるようにする
+      if (stPress.moved) closeSlider();
+      else stSlider.classList.add('open');
     }
     stPress = null;
   };
+  // 出したままのスライダー: 押した高さの透け具合にして、そのままドラッグで変える。離すと閉じる
+  const stFromY = (y) => {
+    const r = stTrack.getBoundingClientRect();
+    const k = Math.min(1, Math.max(0, (r.bottom - y) / r.height));
+    setSeeThrough(ST_MAX - k * (ST_MAX - ST_MIN));
+  };
+  let stDrag = false;
+  stSlider.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    stSlider.setPointerCapture(e.pointerId);
+    stDrag = true;
+    stFromY(e.clientY);
+  });
+  stSlider.addEventListener('pointermove', (e) => { if (stDrag) stFromY(e.clientY); });
+  const stDragEnd = () => {
+    if (!stDrag) return;
+    stDrag = false;
+    closeSlider();
+  };
+  stSlider.addEventListener('pointerup', stDragEnd);
+  stSlider.addEventListener('pointercancel', stDragEnd);
+  // スライダーの外を押す・Esc で閉じる
+  addEventListener('pointerdown', (e) => {
+    if (stSlider.classList.contains('open') && !stSlider.contains(e.target) && e.target !== seeBtn) closeSlider();
+  }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !stSlider.hidden) closeSlider(); });
   seeBtn.addEventListener('pointerup', stEnd);
   seeBtn.addEventListener('pointercancel', stEnd);
   seeBtn.addEventListener('click', () => {

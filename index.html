@@ -226,7 +226,6 @@
     padding: 6px 14px; font-size: 13px; cursor: pointer;
   }
   .chips button:hover { background: #eef1f8; border-color: #c9d3ee; }
-  .chip-sep { align-self: center; color: #c3c7cf; font-size: 18px; line-height: 1; padding: 0 2px; }
 
   /* search results */
   .results { max-width: 720px; padding: 24px 32px 48px; }
@@ -817,7 +816,7 @@
     addEventListener('pointerup', up, true);
   }
 
-  // スタートページのボタン。左がサイトと about:this、区切り線のあとが内蔵ページ
+  // スタートページのボタン。サイトと about:this のあとに内蔵ページを並べる
   const chips = (list) => list.map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('');
 
   function renderStart(tab) {
@@ -832,25 +831,12 @@
           ${chips([[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
              ['zoomquilt', 'https://zoomquilt.org/'],
              ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html']])}
-          <span class="chip-sep" aria-hidden="true">|</span>
           ${chips([...menuPages().map((d) => [pageTitle(d), `about:${d.id}`]), [t('info'), 'about:info']])}
         </div>
       </div>`;
     page.querySelectorAll('[data-q]').forEach((b) =>
       b.addEventListener('click', () => navigate(tab, b.dataset.q)));
     tab.pane.appendChild(page);
-    // 区切り線は、前後のボタンと同じ行にあるときだけ見せる (行の端に余ると意味がないので)
-    const sep = page.querySelector('.chip-sep');
-    const fitSep = () => {
-      sep.style.visibility = '';
-      // 区切り線の縦の真ん中が、前後のボタンの高さの範囲に入っていれば同じ行
-      const mid = sep.offsetTop + sep.offsetHeight / 2;
-      const sameRow = (el) => el.offsetTop < mid && mid < el.offsetTop + el.offsetHeight;
-      if (!sameRow(sep.previousElementSibling) || !sameRow(sep.nextElementSibling)) sep.style.visibility = 'hidden';
-    };
-    const ro = new ResizeObserver(fitSep);
-    ro.observe(page.querySelector('.chips'));
-    tab.cleanups.push(() => ro.disconnect());
   }
 
   // ---------- about:info ----------

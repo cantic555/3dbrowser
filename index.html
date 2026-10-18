@@ -329,15 +329,16 @@
   }
   #pad button.charging::before, #pad button.charging::after { opacity: 1; }
   #pad button.latched, #pad button.latched:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
-  /* スティックのロック: 倒したままじっとしていると外側の輪が一周し、離すとその位置で固定 (つまみが青くなる) */
-  .stick::before {
-    content: ''; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none;
+  /* スティックのロック: 倒したままじっとしているとつまみの周りの輪が一周し、離すとその位置で固定 (つまみが青くなる)。
+     --p は .stick に付けたものを受け継ぐ */
+  .knob::before {
+    content: ''; position: absolute; inset: -5px; border-radius: 50%; pointer-events: none;
     background: conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), rgba(255,255,255,.18) 0);
     -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
     mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
     opacity: 0; transition: opacity .15s;
   }
-  .stick.charging::before { opacity: 1; }
+  .stick.charging .knob::before { opacity: 1; }
   .stick.latched .knob { background: radial-gradient(circle at 35% 30%, #cfdcff, var(--accent)); }
   #pad button {
     width: 36px; height: 36px; padding: 0; border-radius: 50%;
@@ -1784,7 +1785,7 @@
     }
   }
 
-  // スティックを倒したままじっとしている時間を測り、外側の輪を伸ばす
+  // スティックを倒したままじっとしている時間を測り、つまみの周りの輪を伸ばす
   function chargeStick(dt) {
     const moved = !stickAnchor || Math.hypot(stickVec.x - stickAnchor.x, stickVec.y - stickAnchor.y) > STICK_STILL;
     if (moved || Math.hypot(stickVec.x, stickVec.y) <= 0.05) {  // 動かした・ほとんど倒していない → 測り直し

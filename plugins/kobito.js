@@ -991,5 +991,5 @@
       draw();
     });
   }
-  B3D.registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, glass: true, strings: STR, css: CSS, render: renderKobito });
+  B3D.registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, featured: true, glass: true, strings: STR, css: CSS, render: renderKobito });
 })();

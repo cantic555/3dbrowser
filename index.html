@@ -640,6 +640,7 @@
   //   title: タブ名 (STR のキー、または文字を返す関数)
   //   info: 説明ページの一覧に出す説明 (STR のキー)
   //   langRerender: 言語を切り替えたら描き直す (文字だけのページ)。false なら題名だけ変える
+  //   featured: スタートページで先頭に並べる
   //   glass: 透過モードのとき、中身の背景を透明にする (ガラスに描いたように見せる。ページ側も白い背景を描かない)
   //   render(tab, api): ページの中身を tab.pane に作る。api は本体の機能の窓口 (pageApi)
   //   strings: そのページの文字 ({ キー: [日本語, English] })。STR に足す
@@ -848,8 +849,9 @@
     addEventListener('pointerup', up, true);
   }
 
-  // スタートページのボタン。サイトと about:this のあとに内蔵ページを並べる
+  // スタートページのボタン。featured の内蔵ページ (小人) を先頭に、サイトと about:this、残りの内蔵ページの順に並べる
   const chips = (list) => list.map(([label, q = label]) => `<button data-q="${q}">${label}</button>`).join('');
+  const pageChips = (defs) => defs.map((d) => [pageTitle(d), `about:${d.id}`]);
 
   function renderStart(tab) {
     setMeta(tab, t('newTab'), '');
@@ -860,11 +862,12 @@
         <h1>3D <span>Browser</span></h1>
         <p>${t('startLead')}</p>
         <div class="chips">
-          ${chips([[t('chipTokyoTower')], [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E'],
-             [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
+          ${chips([...pageChips(menuPages().filter((d) => d.featured)),
+             [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E'], ['3D Browser', 'about:this'],
+             [t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'],
              ['zoomquilt', 'https://zoomquilt.org/'],
              ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html']])}
-          ${chips([...menuPages().map((d) => [pageTitle(d), `about:${d.id}`]), [t('info'), 'about:info']])}
+          ${chips([...pageChips(menuPages().filter((d) => !d.featured)), [t('info'), 'about:info']])}
         </div>
       </div>`;
     page.querySelectorAll('[data-q]').forEach((b) =>
@@ -2182,7 +2185,7 @@
 <!-- plugins:begin -->
 <script src="plugins/draw.js?v=1c90fb03"></script>
 <script src="plugins/horror.js?v=9e427bb3"></script>
-<script src="plugins/kobito.js?v=f6f7ee02"></script>
+<script src="plugins/kobito.js?v=36518d24"></script>
 <!-- plugins:end -->
 </body>
 </html>

@@ -539,6 +539,7 @@
       'Type a word to search Wikipedia, or a URL to open that site'],
     chipTokyoTower: ['東京タワー', 'Tokyo Tower'],
     chipKenon: ['ケノン脱毛', 'Ke-non'],
+    chipCat: ['猫', 'Cat'],
     info: ['説明', 'About'],
     embedNotice: ['表示されない場合、このサイトは埋め込みを拒否しています。',
       "If nothing shows up, this site doesn't allow embedding."],
@@ -830,7 +831,8 @@
         <div class="chips">
           ${chips([[t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'], ['3D Browser', 'about:this'],
              ['zoomquilt', 'https://zoomquilt.org/'],
-             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html']])}
+             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
+             [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E']])}
           ${chips([...menuPages().map((d) => [pageTitle(d), `about:${d.id}`]), [t('info'), 'about:info']])}
         </div>
       </div>`;
@@ -937,18 +939,40 @@
 
   // ---------- 表示方式 ----------
   // 外のサイトを表示する部分。表示方式を差し替えられるよう、同じ形の窓口にそろえておく
-  //   element: 表示領域に置く要素 / open(url): 開く / resize(w, h): 表示領域の大きさが変わった / destroy(): 片付け
+  //   element: 表示領域に置く要素 / open(url, { referrer }): 開く / resize(w, h): 表示領域の大きさが変わった / destroy(): 片付け
+  // referrer: どのサイトから開いたか (サイト名だけ) を送る。普段は送らない
   function createIframeView() {
     const frame = document.createElement('iframe');
-    frame.referrerPolicy = 'no-referrer';
     return {
       element: frame,
-      open(url) { frame.src = url; },
+      open(url, { referrer = false } = {}) {
+        frame.referrerPolicy = referrer ? 'strict-origin-when-cross-origin' : 'no-referrer';
+        frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+        frame.src = url;
+      },
       resize() {},  // iframe は表示領域に合わせて自動で大きさが変わる
       destroy() { frame.remove(); },
     };
   }
   const createView = createIframeView;  // 今の表示方式
+
+  // YouTube の動画ページの URL を埋め込み用に変える (動画ページは iframe での表示を拒否されるため)。
+  // 埋め込みはリファラー (サイト名) が無いと「エラー 153」になる。file:// で開いたときは送られないので表示できない
+  function youtubeEmbed(url) {
+    let u;
+    try { u = new URL(url); } catch { return null; }
+    const host = u.hostname.replace(/^(www|m)\./, '');
+    let id = null;
+    if (host === 'youtu.be') id = u.pathname.slice(1);
+    else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+      id = u.searchParams.get('v') || u.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]+)/)?.[1];
+    }
+    if (!id || !/^[\w-]{6,}$/.test(id)) return null;
+    // 再生を始める位置 (t=90, t=1m30s)
+    const tm = (u.searchParams.get('t') || u.searchParams.get('start') || '').match(/^(?:(\d+)h)?(?:(\d+)m)?(\d+)?s?$/);
+    const start = tm ? (+tm[1] || 0) * 3600 + (+tm[2] || 0) * 60 + (+tm[3] || 0) : 0;
+    return `https://www.youtube.com/embed/${id}${start ? `?start=${start}` : ''}`;
+  }
 
   function renderUrl(tab, url) {
     // new URL() は日本語ドメインを xn--… に変換してしまうので、文字列から取り出す
@@ -960,12 +984,13 @@
 
     const view = createView();
     tab.pane.appendChild(view.element);
-    view.open(url);
+    const yt = youtubeEmbed(url);  // YouTube は埋め込み用の URL で開き、サイト名だけ送る (アドレスバーは元の URL のまま)
+    view.open(yt || url, { referrer: !!yt });
     // 表示領域の大きさが変わったら伝える
     const ro = new ResizeObserver(() => view.resize(tab.pane.clientWidth, tab.pane.clientHeight));
     ro.observe(tab.pane);
     tab.cleanups.push(() => { ro.disconnect(); view.destroy(); });
-    if (isSelf(url)) return;  // 自分自身は必ず表示できるので案内は不要
+    if (isSelf(url) || yt) return;  // 自分自身と YouTube は表示できるので案内は不要
 
     // 埋め込み拒否 (X-Frame-Options / CSP) はブラウザから検知できないため常に案内を出す
     const notice = document.createElement('div');

@@ -78,7 +78,7 @@ AI コーディングエージェント (Claude Code など) 向けの、この�
 - **iframe の埋め込み拒否**: 多くのサイト (Google, X など) は `X-Frame-Options` / CSP で拒否する。ヘッダーが OK でも、JS で iframe を検知して真っ白になるサイトがある (WindowSwap 等)。
   - 中で表示できると確認済み: Wikipedia、ケノン.com、zoomquilt.org、WebGL Aquarium (webglsamples.org)、cantic.org、earthcam.com
   - X は個別ポストの埋め込み (`platform.twitter.com/embed/Tweet.html?id=…`) なら表示できる。
-- **YouTube 埋め込み**: iframe に `referrerPolicy="no-referrer"` を付けているので「エラー 153」になる。
+- **YouTube**: 動画ページ (`watch?v=` など) は iframe での表示を拒否される。`youtubeEmbed()` で埋め込み用の URL (`/embed/…`) に変え、そのときだけリファラー (サイト名) を送る (ほかのサイトは `no-referrer`)。リファラーが無いと「エラー 153」になるので、`file://` で開いたときは表示できない (確認はローカルのサーバー経由で)。
 - **クラス名の衝突**: 面が `.left` / `.right` などの汎用クラス名を使っているので、ほかの UI で同じ名前を使うと面のスタイルが当たる (`a-left` のように別名にする)。
 - **CSS の `scale()` は z を拡大しない**: 3D 座標を画面に投影する計算で注意。
 - **透明な入れ物もクリックを奪う**: `transform-style: preserve-3d` の入れ物は見えない板としてクリックを受ける。必要なら `pointer-events: none` にして面だけ `auto` に。

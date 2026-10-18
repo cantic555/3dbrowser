@@ -1396,6 +1396,7 @@
 
   function resetAll() {
     stopLatches();
+    resetSeeThrough();
     sizeMode = 'normal';
     setSize(W, H, true, D0);
     turnTo(0, 0, 1);
@@ -1685,7 +1686,8 @@
   const ST_FACE = 0.2 / 0.55;           // 閉じている面は、ブラウザの面のこの割合 (少し多めに透ける)
   const seeBtn = $('seeThrough'), stSlider = $('stSlider');
   const stTrack = stSlider.querySelector('.st-track');
-  let stOpacity = 0.55;
+  const ST_DEFAULT = 0.55;
+  let stOpacity = ST_DEFAULT;
   try { const v = parseFloat(localStorage.getItem(ST_KEY)); if (v >= ST_MIN && v <= ST_MAX) stOpacity = v; } catch {}
   function setSeeThrough(v, save = false) {
     stOpacity = Math.min(ST_MAX, Math.max(ST_MIN, v));
@@ -1700,6 +1702,13 @@
   }
   setSeeThrough(stOpacity);
   onLangChange.push(() => setSeeThrough(stOpacity));
+  // リセット: 透過をやめて、透け具合も元に戻す
+  function resetSeeThrough() {
+    stSlider.hidden = true;
+    stSlider.classList.remove('open');
+    document.body.classList.remove('see-through');
+    setSeeThrough(ST_DEFAULT, true);
+  }
 
   let stPress = null;   // 押している間 { timer, long, moved }
   let stSkipClick = false;  // 長押しのあとの click ではオン・オフしない

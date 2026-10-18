@@ -2078,6 +2078,21 @@
   }
   registerPage({ id: 'this', title: () => '3D Browser', info: 'infoThis', render: renderSelf });
 
+  // ---------- 表示方式 ----------
+  // 外のサイトを表示する部分。表示方式を差し替えられるよう、同じ形の窓口にそろえておく
+  //   element: 表示領域に置く要素 / open(url): 開く / resize(w, h): 表示領域の大きさが変わった / destroy(): 片付け
+  function createIframeView() {
+    const frame = document.createElement('iframe');
+    frame.referrerPolicy = 'no-referrer';
+    return {
+      element: frame,
+      open(url) { frame.src = url; },
+      resize() {},  // iframe は表示領域に合わせて自動で大きさが変わる
+      destroy() { frame.remove(); },
+    };
+  }
+  const createView = createIframeView;  // 今の表示方式
+
   function renderUrl(tab, url) {
     // new URL() は日本語ドメインを xn--… に変換してしまうので、文字列から取り出す
     const host = url.match(/^[a-z]+:\/\/([^/?#:]+)/i)?.[1] ?? url;
@@ -2086,10 +2101,13 @@
     try { shown = decodeURI(url); } catch {}
     setMeta(tab, isSelf(url) ? '3D Browser' : host || url, shown);
 
-    const frame = document.createElement('iframe');
-    frame.src = url;
-    frame.referrerPolicy = 'no-referrer';
-    tab.pane.appendChild(frame);
+    const view = createView();
+    tab.pane.appendChild(view.element);
+    view.open(url);
+    // 表示領域の大きさが変わったら伝える
+    const ro = new ResizeObserver(() => view.resize(tab.pane.clientWidth, tab.pane.clientHeight));
+    ro.observe(tab.pane);
+    tab.cleanups.push(() => { ro.disconnect(); view.destroy(); });
     if (isSelf(url)) return;  // 自分自身は必ず表示できるので案内は不要
 
     // 埋め込み拒否 (X-Frame-Options / CSP) はブラウザから検知できないため常に案内を出す

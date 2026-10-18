@@ -1179,8 +1179,10 @@
     for (const tab of face._browser?.tabs || []) disposePage(tab);
     face.classList.remove('browser');
     face._browser = null;
+    // 陰・ロゴ・大きさを変えるつまみは残す
+    const keep = ['shade', 'logo', 'resize-grip', 'resize-probe'];
     for (const el of [...face.children]) {
-      if (!el.classList.contains('shade') && !el.classList.contains('logo')) el.remove();
+      if (!keep.some((c) => el.classList.contains(c))) el.remove();
     }
   }
 
@@ -1355,7 +1357,9 @@
 
   // 右下の角のつまみ。箱を傾けていても、マウスの動きを面の上の動きに直して大きさを変える。
   // その面に見えている 2 辺を変える: 正面・背面は幅と高さ、左右の面は厚みと高さ、上下の面は幅と厚み
+  // ブラウザにしていない (閉じている) 面にも付ける。面を閉じても残す
   function addResizeGrip(face) {
+    if (face.querySelector(':scope > .resize-grip')) return;  // 付いていれば何もしない
     const has = (c) => face.classList.contains(c);
     const axes = has('left') || has('right') ? ['d', 'h'] : has('top') || has('bottom') ? ['w', 'd'] : ['w', 'h'];
     const grip = document.createElement('div');
@@ -1988,6 +1992,9 @@
     }, 1200);
   }
   setLang(lang);
+
+  // どの面にも右下に大きさを変えるつまみを付ける (ブラウザにしていない面にも)
+  for (const face of box.querySelectorAll(OPENABLE)) addResizeGrip(face);
 
   // 最初は前面だけブラウザにしておく (最初の斜めの向きを保つため openFace は使わない)。
   // スタートページにプラグインのページも並べるので、プラグインの読み込みが終わってから開く

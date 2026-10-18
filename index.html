@@ -726,7 +726,7 @@
   //   title: タブ名 (STR のキー、または文字を返す関数)
   //   info: 説明ページの一覧に出す説明 (STR のキー)
   //   langRerender: 言語を切り替えたら描き直す (文字だけのページ)。false なら題名だけ変える
-  //   render(tab): ページの中身を tab.pane に作る
+  //   render(tab, api): ページの中身を tab.pane に作る。api は本体の機能の窓口 (pageApi)
   const PAGES = new Map();
   function registerPage(def) { PAGES.set(def.id, def); }
   const pageTitle = (def) => typeof def.title === 'function' ? def.title() : t(def.title);
@@ -771,7 +771,153 @@
 
   function renderPage(tab, def) {
     setMeta(tab, pageTitle(def), `about:${def.id}`);
-    def.render(tab);
+    def.render(tab, pageApi(tab));
+  }
+
+  // ページに渡す窓口。ページは本体の中身を直接さわらず、これだけを使う。
+  // ページを離れると、onFrame の処理、add3d で出した要素、acceptItem の受け取り口は自動で片付く
+  function pageApi(tab) {
+    const api = {
+      t, pick,
+      lang: () => lang,
+      face: () => tab.browser?.face,  // ページを表示している面 (タブを別の面へ移すと変わる)
+      navigate: (q) => navigate(tab, q),
+      rerender: () => render(tab),
+      onCleanup: (fn) => { tab.cleanups.push(fn); },
+      // 毎フレーム fn(dt 秒, 時刻) を呼ぶ。dt は長くても 0.05 秒
+      onFrame(fn) {
+        let last = performance.now(), id;
+        const loop = (now) => {
+          id = requestAnimationFrame(loop);
+          const dt = Math.min(0.05, (now - last) / 1000);
+          last = now;
+          fn(dt, now);
+        };
+        id = requestAnimationFrame(loop);
+        api.onCleanup(() => cancelAnimationFrame(id));
+      },
+      // 面の外 (3D 空間) に出す要素を箱に入れる。remove = false ならページを離れても残す (自分で消す)
+      add3d(el, remove = true) {
+        box.appendChild(el);
+        if (remove) api.onCleanup(() => el.remove());
+        return el;
+      },
+      offsetInFace, place3d, faceGravity, faceFacing,
+      shake(on = true) {  // 画面を揺らす
+        scene.classList.remove('shake');
+        if (!on) return;
+        void scene.offsetWidth;
+        scene.classList.add('shake');
+      },
+      seeThrough: () => document.body.classList.contains('see-through'),
+      giveItem,
+      // ほかのページからもらったアイテムを el の上で受け取る。fn(el の中の x, y)
+      acceptItem(kind, el, fn) {
+        const a = { kind, el, fn };
+        acceptors.push(a);
+        api.onCleanup(() => acceptors.splice(acceptors.indexOf(a), 1));
+      },
+    };
+    return api;
+  }
+
+  // ---------- 面の 3D の計算 ----------
+  // ページ内の要素の左上が面のどこにあるか。側面では中身を縮めて表示しているので、
+  // その倍率 s も返す (面の中の座標 = (x + 要素内の座標) * s)
+  function offsetInFace(el, face) {
+    let x = 0, y = 0;
+    for (let e = el; e && e !== face && !e.classList.contains('squash'); e = e.offsetParent) {
+      x += e.offsetLeft;
+      y += e.offsetTop;
+    }
+    const squash = face.querySelector(':scope > .squash');
+    return { x, y, s: squash ? face.offsetWidth / squash.offsetWidth : 1 };
+  }
+
+  // 面の上の点 (面の左上からの座標 x, y) に要素を置き、面から z だけ手前に出す。
+  // 面と同じ変形を使うため、変形の中心を面の中心にそろえる。
+  // extra には面の中での追加の変形 (横移動や回転など) を渡せる
+  function place3d(el, face, x, y, z, extra = '') {
+    const left = face.offsetLeft + x - el.offsetWidth / 2;
+    const top = face.offsetTop + y - el.offsetHeight / 2;
+    const m = getComputedStyle(face).transform;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.transformOrigin =
+      `${face.offsetLeft + face.offsetWidth / 2 - left}px ${face.offsetTop + face.offsetHeight / 2 - top}px`;
+    el.style.transform = `${m === 'none' ? '' : m} translateZ(${z}px) ${extra}`;
+  }
+
+  // 面の中での重力の向き。x, y は面の中 (y が面の下向き)、z は面に垂直な成分
+  function faceGravity(face) {
+    const m = new DOMMatrix(ROT())
+      .multiply(new DOMMatrix(getComputedStyle(face).transform));
+    // 画面の下向き (0, 1, 0) を面の座標に戻す。w = 0 なので平行移動は無視される
+    const g = m.inverse().transformPoint(new DOMPoint(0, 1, 0, 0));
+    return { x: g.x, y: g.y, z: g.z };
+  }
+
+  // 面が見ている人の側を向いているか (裏から見ているときは負になる)
+  function faceFacing(face) {
+    const m = new DOMMatrix(ROT())
+      .multiply(new DOMMatrix(getComputedStyle(face).transform));
+    return m.transformPoint(new DOMPoint(0, 0, 1, 0)).z;
+  }
+
+  // ---------- アイテムの受け渡し ----------
+  // ページからもらったアイテム (ホラーの花など) は画面の隅に残り、ドラッグで別のページへ持っていける
+  const acceptors = [];  // 受け取り口 { kind, el, fn }
+
+  // 画面の隅に残るアイテム。クリックで片付ける
+  function giveItem(kind, html, titleKey) {
+    if (document.querySelector('.souvenir')) return;
+    const s = document.createElement('button');
+    s.className = 'souvenir';
+    s.dataset.i18nTitle = titleKey;
+    s.title = t(titleKey);
+    s.innerHTML = html;
+    document.body.appendChild(s);
+    // ドラッグで運べる。受け取るページに落とすとあげられる。動かさずに離したら片付ける
+    let drag = null;
+    s.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      // 指の下の要素で pointerup を受けたいので、タッチの自動キャプチャを外す
+      s.releasePointerCapture?.(e.pointerId);
+      drag = { x: e.clientX, y: e.clientY, moved: false };
+    });
+    const move = (e) => {
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
+      drag.moved = true;
+      s.classList.add('dragging');
+      s.style.left = `${e.clientX - 17}px`;
+      s.style.top = `${e.clientY - 34}px`;
+      s.style.bottom = 'auto';
+    };
+    const up = (e) => {
+      if (!drag) return;
+      const moved = drag.moved;
+      drag = null;
+      if (!moved) { cleanup(); s.remove(); return; }
+      // 受け取り口の上で離したら、その場所 (受け取り口の中の座標) にあげる。
+      // offsetX/Y は 3D 変形を戻した要素内の座標なので、傾けたままでも正しい
+      const a = acceptors.find((a) => a.kind === kind && a.el === e.target);
+      if (a) {
+        a.fn(e.offsetX, e.offsetY);
+        cleanup();
+        s.remove();
+        return;
+      }
+      s.classList.remove('dragging');  // それ以外は左下に戻す
+      s.style.left = s.style.top = s.style.bottom = '';
+    };
+    const cleanup = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up, true);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up, true);
   }
 
   function renderStart(tab) {
@@ -796,7 +942,7 @@
   }
 
   // ドラッグで線を引くだけのお絵描き。右上のボタンで全部消す
-  function renderDraw(tab) {
+  function renderDraw(tab, api) {
     const canvas = document.createElement('canvas');
     canvas.className = 'draw';
     tab.pane.appendChild(canvas);
@@ -835,9 +981,9 @@
 
     // 描いた線を 1 本ずつ蝶のように面から 3D 空間へ飛び立たせ、キャンバスからは消す
     function flyAway() {
-      const face = tab.browser?.face;
+      const face = api.face();
       if (!strokes.length || !face) return;
-      const { x: ox, y: oy, s } = offsetInFace(canvas, face);
+      const { x: ox, y: oy, s } = api.offsetInFace(canvas, face);
 
       strokes.forEach((pts, i) => {
         const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -860,7 +1006,7 @@
         el.style.width = `${w * s}px`;
         el.style.height = `${h * s}px`;
         el.appendChild(c);
-        face.parentElement.appendChild(el);
+        api.add3d(el, false);  // ページを離れても飛んでいく
         flutter(el, c, face, (ox + minX + w / 2) * s, (oy + minY + h / 2) * s, Math.min(i, 20) * 140);
       });
       strokes.length = 0;
@@ -881,7 +1027,7 @@
         const dx = side * 160 * p + Math.sin(p * 9 + phase) * 60;
         const dy = -380 * e + Math.sin(p * 13 + phase) * 25;
         const rot = Math.sin(p * 7 + phase) * 18;
-        place3d(el, face, x, y, 700 * e, `translate(${dx}px, ${dy}px) rotate(${rot}deg)`);
+        api.place3d(el, face, x, y, 700 * e, `translate(${dx}px, ${dy}px) rotate(${rot}deg)`);
         const t = Math.max(0, now - t0) / 1000;
         wing.style.transform = p > 0 ? `scaleX(${0.3 + 0.7 * Math.abs(Math.cos(t * Math.PI * hz))})` : '';
         el.style.opacity = p > 0.75 ? 1 - (p - 0.75) / 0.25 : 1;
@@ -1035,7 +1181,7 @@
 
   const STOP = Symbol('stop');
 
-  function renderHorror(tab) {
+  function renderHorror(tab, api) {
     const page = document.createElement('div');
     page.className = 'horror';
     page.innerHTML = `
@@ -1049,9 +1195,9 @@
         <p data-i18n="theEnd">${t('theEnd')}</p>
         <button class="h-replay" data-i18n="again">${t('again')}</button>
       </div>`;
-    page.querySelector('.h-replay').addEventListener('click', () => render(tab));
+    page.querySelector('.h-replay').addEventListener('click', () => api.rerender());
     tab.pane.appendChild(page);
-    playHorror(tab, page);
+    playHorror(page, api);
   }
   registerPage({ id: 'horror', title: 'horror', info: 'infoHorror', menu: true, render: renderHorror });
 
@@ -1071,38 +1217,12 @@
     })();
   }
 
-  // 面の上の点 (面の左上からの座標 x, y) に要素を置き、面から z だけ手前に出す。
-  // 面と同じ変形を使うため、変形の中心を面の中心にそろえる
-  // ページ内の要素の左上が面のどこにあるか。側面では中身を縮めて表示しているので、
-  // その倍率 s も返す (面の中の座標 = (x + 要素内の座標) * s)
-  function offsetInFace(el, face) {
-    let x = 0, y = 0;
-    for (let e = el; e && e !== face && !e.classList.contains('squash'); e = e.offsetParent) {
-      x += e.offsetLeft;
-      y += e.offsetTop;
-    }
-    const squash = face.querySelector(':scope > .squash');
-    return { x, y, s: squash ? face.offsetWidth / squash.offsetWidth : 1 };
-  }
-
-  // extra には面の中での追加の変形 (横移動や回転など) を渡せる
-  function place3d(el, face, x, y, z, extra = '') {
-    const left = face.offsetLeft + x - el.offsetWidth / 2;
-    const top = face.offsetTop + y - el.offsetHeight / 2;
-    const m = getComputedStyle(face).transform;
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-    el.style.transformOrigin =
-      `${face.offsetLeft + face.offsetWidth / 2 - left}px ${face.offsetTop + face.offsetHeight / 2 - top}px`;
-    el.style.transform = `${m === 'none' ? '' : m} translateZ(${z}px) ${extra}`;
-  }
-
-  async function playHorror(tab, page) {
+  async function playHorror(page, api) {
     const q = (s) => page.querySelector(s);
     const noise = q('.h-noise'), room = q('.h-room'), ghost = q('.h-ghost'), svg = q('.crawl-svg');
     const temps = [];  // 面の外に出した要素 (最後に片付ける)
-    let skipped = false;
-    const alive = () => !skipped && page.parentNode === tab.pane;
+    let skipped = false, closed = false;
+    const alive = () => !skipped && !closed;
     // 一定時間待つ。途中でページが閉じられたり Esc が押されたら中断する
     let wake = null;
     const step = (ms) => new Promise((resolve, reject) => {
@@ -1111,14 +1231,14 @@
     });
     const onKey = (e) => { if (e.key === 'Escape') { skipped = true; wake?.(); } };
     addEventListener('keydown', onKey);
-    startNoise(noise, () => page.parentNode === tab.pane && !page.classList.contains('done'));
-    const shake = () => { scene.classList.remove('shake'); void scene.offsetWidth; scene.classList.add('shake'); };
+    api.onCleanup(() => { closed = true; wake?.(); });  // ページを離れたら中断する
+    startNoise(noise, () => !closed && !page.classList.contains('done'));
+    const shake = () => api.shake();
     const add3d = (cls, html) => {
       const el = document.createElement('div');
       el.className = cls;
       el.innerHTML = html;
-      tab.browser.face.parentElement.appendChild(el);
-      temps.push(el);
+      temps.push(api.add3d(el));
       return el;
     };
     // 這う姿の位置と大きさ (t: 0 = 遠く, 1 = 目の前)
@@ -1154,11 +1274,11 @@
       await step(700);  // 目の前で止まる
 
       // 3. 左手 (画面の右) で画面の縁をつかむ
-      const face = tab.browser.face;
+      const face = api.face();
       const fw = face.offsetWidth, fh = face.offsetHeight;
       svg.classList.add('no-l');
       const grip = add3d('grip3d', GRIP_SVG);
-      place3d(grip, face, fw * 0.7, fh - 22, 6);
+      api.place3d(grip, face, fw * 0.7, fh - 22, 6);
       shake();
       await step(900);
 
@@ -1173,14 +1293,14 @@
         const from = z, n = Math.round(ms / 40);
         for (let i = 1; i <= n; i++) {
           z = from + (to - from) * i / n;
-          place3d(arm, face, ax, ay, z, jitter());
+          api.place3d(arm, face, ax, ay, z, jitter());
           await step(40);
         }
       }
 
       // 5. ぱっ！ 手が花を差し出す形に変わって花が咲き、同時に顔をガッと上げて笑い顔を見せる
       arm.innerHTML = OFFER_SVG;
-      place3d(arm, face, ax, ay, z, 'rotate(-6deg)');
+      api.place3d(arm, face, ax, ay, z, 'rotate(-6deg)');
       void arm.offsetWidth;
       arm.classList.add('pop');
       page.classList.add('pop');  // 面の中の光とハート
@@ -1189,10 +1309,10 @@
       await step(2800);
 
       // 6. 手を引っ込める。花はお土産として受け取る
-      souvenir();
+      api.giveItem('flower', FLOWER_SVG, 'souvenir');
       arm.classList.add('given');
       for (let i = 1; i <= 8; i++) {
-        place3d(arm, face, ax, ay, z * (1 - i / 8));
+        api.place3d(arm, face, ax, ay, z * (1 - i / 8));
         await step(45);
       }
       arm.remove();
@@ -1217,66 +1337,15 @@
     } finally {
       removeEventListener('keydown', onKey);
       for (const el of temps) el.remove();
-      scene.classList.remove('shake');
+      api.shake(false);
     }
     // 終わり (Esc で飛ばしたときもここ)
-    if (page.parentNode !== tab.pane) return;
+    if (closed) return;
     page.classList.add('done');  // 砂嵐の描画も止める
     noise.style.opacity = 0;
     room.style.opacity = 0;
     ghost.style.opacity = 0;
     q('.h-end').hidden = false;
-  }
-
-  // 画面の隅に残る花。クリックで片付ける
-  function souvenir() {
-    if (document.querySelector('.souvenir')) return;
-    const s = document.createElement('button');
-    s.className = 'souvenir';
-    s.dataset.i18nTitle = 'souvenir';
-    s.title = t('souvenir');
-    s.innerHTML = FLOWER_SVG;
-    document.body.appendChild(s);
-    // ドラッグで運べる。小人のページに落とすとあげられる。動かさずに離したら片付ける
-    let drag = null;
-    s.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      // 指の下の要素で pointerup を受けたいので、タッチの自動キャプチャを外す
-      s.releasePointerCapture?.(e.pointerId);
-      drag = { x: e.clientX, y: e.clientY, moved: false };
-    });
-    const move = (e) => {
-      if (!drag) return;
-      if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 5) return;
-      drag.moved = true;
-      s.classList.add('dragging');
-      s.style.left = `${e.clientX - 17}px`;
-      s.style.top = `${e.clientY - 34}px`;
-      s.style.bottom = 'auto';
-    };
-    const up = (e) => {
-      if (!drag) return;
-      const moved = drag.moved;
-      drag = null;
-      if (!moved) { cleanup(); s.remove(); return; }
-      // 小人のキャンバスの上で離したら、その場所 (キャンバス内の座標) にあげる
-      const kobito = e.target?.closest?.('.kobito');
-      if (kobito?._giveFlower && e.target.tagName === 'CANVAS') {
-        kobito._giveFlower(e.offsetX, e.offsetY);
-        cleanup();
-        s.remove();
-        return;
-      }
-      s.classList.remove('dragging');  // それ以外は左下に戻す
-      s.style.left = s.style.top = s.style.bottom = '';
-    };
-    const cleanup = () => {
-      removeEventListener('pointermove', move);
-      removeEventListener('pointerup', up, true);
-    };
-    addEventListener('pointermove', move);
-    addEventListener('pointerup', up, true);
   }
 
   // ---------- about:kobito ----------
@@ -1290,23 +1359,7 @@
   const GRAVITY = 900;  // px/s²
   const FALL_TIME = 4;  // 画面から落ちて消えるまでの秒数
 
-  // 面の中での重力の向き。x, y は面の中 (y が面の下向き)、z は面に垂直な成分
-  function faceGravity(face) {
-    const m = new DOMMatrix(ROT())
-      .multiply(new DOMMatrix(getComputedStyle(face).transform));
-    // 画面の下向き (0, 1, 0) を面の座標に戻す。w = 0 なので平行移動は無視される
-    const g = m.inverse().transformPoint(new DOMPoint(0, 1, 0, 0));
-    return { x: g.x, y: g.y, z: g.z };
-  }
-
-  // 面が見ている人の側を向いているか (裏から見ているときは負になる)
-  function faceFacing(face) {
-    const m = new DOMMatrix(ROT())
-      .multiply(new DOMMatrix(getComputedStyle(face).transform));
-    return m.transformPoint(new DOMPoint(0, 0, 1, 0)).z;
-  }
-
-  function renderKobito(tab) {
+  function renderKobito(tab, api) {
     const page = document.createElement('div');
     page.className = 'kobito';
     const canvas = document.createElement('canvas');
@@ -1322,7 +1375,7 @@
     const people = [];
     const fallers = [];   // 画面から落ちていく途中の小人
     let away = 0, comeback = 0;  // 落ちていなくなった人数と、次に戻ってくるまでの時間
-    let prevG = null, shake = 0, last = performance.now();
+    let prevG = null, shake = 0;
     let boss = null;  // みんなが落ちていくのを見て高笑いする 1 人 (いれば眼鏡の小人)
     let glassesAway = false;  // 眼鏡の小人が落ちていなくなっているか
     // ---------- 隠し機能: お菓子を隠し持っている小人 ----------
@@ -1359,8 +1412,8 @@
       const c = document.createElement('canvas');
       c.width = FW * R; c.height = FH * R;
       el.appendChild(c);
-      face.parentElement.appendChild(el);
-      const off = offsetInFace(canvas, face);
+      api.add3d(el);
+      const off = api.offsetInFace(canvas, face);
       el.style.width = `${FW * off.s}px`;
       el.style.height = `${FH * off.s}px`;
       // 半分くらいは叫びながら落ちていく (残りは無言)
@@ -1378,7 +1431,7 @@
     function updateFallers(dt) {
       for (const f of [...fallers]) {
         f.t += dt;
-        if (f.t > FALL_TIME || !f.face.isConnected) {
+        if (f.t > FALL_TIME || !f.face.isConnected) {  // 面を閉じたときも消す
           f.el.remove();
           fallers.splice(fallers.indexOf(f), 1);
           continue;
@@ -1387,7 +1440,7 @@
         // 重力は面の座標で表してあるので、面の中の成分と面から出る成分に分けて動かす
         const d = 80 * f.t + 20 * f.t * f.t;
         f.spin += f.spinV * dt;
-        place3d(f.el, f.face,
+        api.place3d(f.el, f.face,
           f.x + f.dx * f.t + f.g.x * d, f.y + f.dy * f.t + f.g.y * d, f.g.z * d, `rotate(${f.spin}rad)`);
         f.el.style.opacity = f.t > FALL_TIME - 1 ? FALL_TIME - f.t : 1;  // 最後の 1 秒で消える
         // 手足をばたばたさせる
@@ -1451,9 +1504,9 @@
     }
 
     function step(dt) {
-      const face = tab.browser?.face;
+      const face = api.face();
       if (!face) return;
-      const g = faceGravity(face);
+      const g = api.faceGravity(face);
       const m = Math.hypot(g.x, g.y);       // 面の中での重力の強さ (0 = 面が水平)
       const upright = m > 0.35;             // 地面がある (面が立っている)
       const gx = g.x / (m || 1), gy = g.y / (m || 1);
@@ -1597,7 +1650,7 @@
     }
 
     function updateSnack(dt, face) {
-      fromBack = document.body.classList.contains('see-through') && faceFacing(face) < -0.2;
+      fromBack = api.seeThrough() && api.faceFacing(face) < -0.2;
       let sneak = people.find((q) => q.snack);
       if (!sneak) {
         // しばらくしたら、また誰かがこっそりお菓子を持つ
@@ -1748,8 +1801,8 @@
     }
 
     function draw() {
-      const face = tab.browser?.face;
-      const g = face ? faceGravity(face) : { x: 0, y: 1 };
+      const face = api.face();
+      const g = face ? api.faceGravity(face) : { x: 0, y: 1 };
       const m = Math.hypot(g.x, g.y), upright = m > 0.35;
       // 背景は真っ白なだけ
       ctx.setTransform(R, 0, 0, R, 0, 0);
@@ -1836,7 +1889,7 @@
     // 地面に沿って、p から見て (x, y) がどちら側か (+1 = 体の右)
     const sideOf = (p, x, y) => { const g = prevG || { x: 0, y: 1 }; return Math.sign((x - p.x) * g.y - (y - p.y) * g.x) || 1; };
 
-    page._giveFlower = (x, y) => {
+    api.acceptItem('flower', canvas, (x, y) => {
       looseFlower = { x: Math.min(W - 10, Math.max(10, x)), y, vx: 0, vy: 0 };
       for (const p of people) {
         if (p.state === 'held' || p === boss) continue;
@@ -1844,7 +1897,7 @@
         p.state = 'walk'; p.timer = 4; p.flowerRun = true;
         p.dir = sideOf(p, looseFlower.x, looseFlower.y);
       }
-    };
+    });
 
     function updateFlowers(dt, g, upright) {
       // 落ちている花: 重力で地面 (面の中の重力の向きの端) まで落ちる
@@ -1914,14 +1967,7 @@
     }
 
     let spawned = false;
-    (function frame(now) {
-      if (page.parentNode !== tab.pane) {  // 別のページへ移ったら止める
-        for (const f of fallers) f.el.remove();
-        return;
-      }
-      requestAnimationFrame(frame);
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
+    api.onFrame((dt) => {
       if (tab.pane.hidden || !canvas.clientWidth) return;  // 裏のタブでは止めておく
       // 表示サイズに合わせる
       const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -1932,7 +1978,7 @@
       }
       step(dt);
       draw();
-    })(performance.now());
+    });
   }
   registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, render: renderKobito });
 

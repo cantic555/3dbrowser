@@ -1157,7 +1157,21 @@
     makeBrowser(face).addTab(tab);
     // 開いた面がこちらを向くように回す
     const [trx, try_] = FACING[Object.keys(FACING).find((c) => face.classList.contains(c))];
-    turnTo(trx, try_);
+    turnTo(trx, try_, sideFitZoom(face));
+  }
+
+  // 側面・上下の面はこちらを向くと手前に来て、遠近で大きく見える。右下のつまみまで画面に収まるよう、
+  // はみ出すときだけ縮小する (はみ出さなければ今の倍率のまま。正面・背面は undefined = 変えない)
+  function sideFitZoom(face) {
+    const has = (c) => face.classList.contains(c);
+    const lr = has('left') || has('right'), tb = has('top') || has('bottom');
+    if (!lr && !tb) return undefined;
+    const P = parseFloat(getComputedStyle(scene).perspective) || 2200;
+    // 面の長い辺・その辺が収まるべき画面の長さ・面が手前に出てくる距離 (scale は z を拡大しないので倍率はかけない)
+    const [len, room, near] = lr ? [boxH, innerHeight, boxW / 2] : [boxW, innerWidth, boxH / 2];
+    const grow = P / (P - near * Math.sin(72 * Math.PI / 180));  // FACING の 72° 回したときの遠近の拡大
+    const fit = room * 0.72 / (len * grow * fitScale() / zoom);
+    return Math.min(zoom, fit);
   }
 
   // ブラウザを閉じて元の面に戻す。タブが残っていれば一緒に捨てる

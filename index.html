@@ -270,6 +270,19 @@
   }
   #controls button:hover { background: rgba(255,255,255,.16); }
   #controls button { white-space: nowrap; }  /* ボタンの中で文字を折り返さない */
+  /* 右上の全画面・言語。箱に重なっても邪魔にならないよう控えめに */
+  #topControls {
+    position: fixed; z-index: 20; display: flex; gap: 8px; align-items: center;
+    top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right));
+  }
+  #topControls button {
+    height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,.22); background: rgba(20,22,28,.45);
+    color: rgba(255,255,255,.75); cursor: pointer;
+  }
+  #topControls button:hover { background: rgba(255,255,255,.16); color: #fff; }
+  #topControls #fullscreen { width: 28px; padding: 0; display: grid; place-items: center; }
+  #topControls #fullscreen svg { width: 14px; height: 14px; }
   /* 幅の狭いスマホでは、1 行に収まるよう余白と文字を詰める */
   @media (max-width: 420px) {
     #controls { right: 8px; gap: 5px; }
@@ -466,8 +479,11 @@
   <button id="resetView" data-i18n="reset" data-i18n-title="resetTip">リセット</button>
   <button id="sizeBtn" data-i18n="size" data-i18n-title="sizeTip" aria-haspopup="menu">サイズ</button>
   <button id="seeThrough" data-i18n="seeThrough" data-i18n-title="seeThroughTip">透過</button>
-  <button id="fullscreen" data-i18n-title="fullscreenTip">全画面</button>
   <button id="padShow" hidden>🎮</button>
+</div>
+<!-- 右上: アプリの設定 (全画面・言語) -->
+<div id="topControls">
+  <button id="fullscreen" data-i18n-title="fullscreenTip"></button>
   <button id="langToggle"></button>
 </div>
 <!-- ブラウザの大きさのプリセット (「サイズ」ボタンで開く) -->
@@ -1837,7 +1853,18 @@
       if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
       else requestFs.call(root);
     });
-    const sync = () => { fsBtn.textContent = t(fsElement() ? 'exitFullscreen' : 'fullscreen'); };
+    // アイコン: 四隅が外を向く = 全画面にする / 内を向く = 全画面をやめる
+    const FS_ICON = {
+      enter: '<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/>',
+      exit: '<path d="M8 3v5H3M16 3v5h5M21 16h-5v5M3 16h5v5"/>',
+    };
+    const sync = () => {
+      const on = !!fsElement();
+      fsBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${FS_ICON[on ? 'exit' : 'enter']}</svg>`;
+      fsBtn.title = t(on ? 'exitFullscreen' : 'fullscreenTip');
+      fsBtn.setAttribute('aria-label', fsBtn.title);
+    };
     sync();
     onLangChange.push(sync);
     document.addEventListener('fullscreenchange', sync);

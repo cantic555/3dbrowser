@@ -20,6 +20,13 @@ const git = (cmd) => execSync(`git ${cmd}`, { cwd: root, encoding: 'utf8', stdio
 // plugins/ の中身を index.html の読み込みに反映しておく
 execSync('node build-plugins.mjs', { cwd: root, stdio: 'inherit' });
 
+// 公開するのは公開用のブランチ (main) からだけ。ほかのブランチで作業中のものを間違えて公開しないように (確認だけなら続ける)
+const branch = git('rev-parse --abbrev-ref HEAD');
+if (branch !== 'main') {
+  console.error(`公開できるのは main ブランチからだけです (今は ${branch})`);
+  if (!dryRun) process.exit(1);
+}
+
 // コミットしていない変更があると、公開する中身とタグのコミットが食い違うので止める (確認だけなら続ける)
 const dirty = git('status --porcelain');
 if (dirty) {

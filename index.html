@@ -221,6 +221,20 @@
   .start h1 span { color: var(--accent); }
   .start p { margin: 0; color: var(--muted); font-size: 14px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 560px; }
+  /* まとめ (フォルダ) のページ */
+  .group-page { max-width: 640px; margin: 0 auto; padding: 36px 24px; }
+  .group-page h1 { margin: 0 0 14px; font-size: 22px; font-weight: 600; }
+  .group-list {
+    display: grid; grid-template-columns: repeat(auto-fill, 112px); gap: 8px;
+    padding: 18px; border: 1px solid #dde0e6; border-radius: 10px; background: #fff;
+  }
+  .group-list a {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; border-radius: 8px;
+    color: var(--text); text-decoration: none; font-size: 13px; text-align: center;
+  }
+  .group-list a:hover { background: #eef3ff; }
+  .group-list a:hover span:last-child { color: var(--accent); text-decoration: underline; }
+  .group-icon { font-size: 44px; line-height: 1; }
   .chips button {
     border: 1px solid #dde0e6; background: #f7f8fa; border-radius: 999px;
     padding: 6px 14px; font-size: 13px; cursor: pointer;
@@ -261,7 +275,7 @@
   body.see-through .face.glass .tabs { background: rgb(211 213 219 / var(--st, .55)); }
   body.see-through .face.glass .toolbar { background: rgb(233 234 238 / var(--st, .55)); }
   body.see-through .face.glass .tab.active { background: rgb(233 234 238 / var(--st, .55)); }
-  body.see-through .face.glass .panes { background: transparent; }
+  body.see-through .face.glass .panes, body.look-glass .face.glass .panes { background: transparent; }
   body.see-through .face.glass .shade { opacity: 0 !important; }
   /* 右下の操作ボタン */
   #controls { position: fixed; right: 16px; bottom: 10px; z-index: 20; display: flex; gap: 8px; }
@@ -326,13 +340,47 @@
   #sizeMenu button:hover, #sizeMenu button.current { background: rgba(255,255,255,.12); }
   #sizeMenu button small { color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
 
-  /* ---------- 操作パネル (スティックと拡大縮小) ---------- */
+  /* ---------- 操作パネル (左下: 回転のスティックとロール、右下: パンのレバーと拡大縮小) ---------- */
+  /* 真ん中 (箱が映るところ) を空けるため、画面の両端に分ける。#pad 自体はクリックを受けない */
   #pad {
-    position: fixed; left: 50%; bottom: 14px; z-index: 20; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 12px;
-    touch-action: none; user-select: none;
+    position: fixed; left: 0; right: 0; bottom: 14px; z-index: 20;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+    touch-action: none; user-select: none; pointer-events: none;
   }
   #pad[hidden] { display: none; }
+  .pad-l, .pad-r { position: relative; display: flex; align-items: center; gap: 10px; pointer-events: auto; }
+  /* 触らずにしばらくたつと薄くする (ロック中で光っているものはそのまま) */
+  #pad .stick, #pad button { transition: opacity .6s; }
+  #pad.dim .stick:not(.latched):not(.active), #pad.dim button:not(.latched) { opacity: .4; }
+  /* パンのレバー: はみ出していない (動かす余地がない) ときは薄く */
+  /* つまみの印: パンは手のひら、回転は地球儀 */
+  .pan-stick .knob::after, .rot-stick .knob::after { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; opacity: .85; }
+  .pan-stick .knob::after { content: '✋'; }
+  .rot-stick .knob::after { content: '🌐'; }
+  #pad .pan-stick.off { opacity: .35; }
+  @media (max-width: 480px) {
+    #pad .stick { width: 84px; height: 84px; }
+    #pad .knob { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+  }
+  /* ふだんは右下に縦一列にまとめる (片手の親指で届くように。PC も同じ)。
+     上から パン、− ＋、回転、⟲ ⟳。下端は layoutPad() で右下のボタンの列の上に置く。
+     高さが足りない画面 (横持ちのスマホ) だけは、左右の両端に分ける */
+  @media (min-height: 560px) {
+    #pad {
+      left: auto; right: max(12px, env(safe-area-inset-right)); padding: 0;
+      flex-direction: column; align-items: center; gap: 8px; pointer-events: auto;
+    }
+    .pad-l, .pad-r { display: contents; }
+    #pad .pan-stick { order: 1; }
+    #pad .zoom-btns { order: 2; }
+    #pad .rot-stick { order: 3; }
+    #pad .roll-btns { order: 4; }
+    #pad .zoom-btns, #pad .roll-btns { flex-direction: row; gap: 12px; }
+    #pad .zoom-out, #pad .roll-left { order: -1; }  /* 左が − と ⟲ */
+    #pad .zoom-btns button, #pad .roll-btns button { width: 40px; height: 40px; }
+    #pad .pad-hide { left: -14px; top: -10px; width: 22px; height: 22px; }
+  }
   .stick {
     position: relative; width: 104px; height: 104px; border-radius: 50%;
     background: radial-gradient(circle, rgba(255,255,255,.06), rgba(255,255,255,.14));
@@ -398,7 +446,7 @@
   }
   #pad button:hover { background: rgba(50,54,64,.85); }
   #pad .pad-hide {
-    position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; font-size: 11px;
+    position: absolute; left: -6px; top: -12px; width: 20px; height: 20px; font-size: 11px;
   }
   /* 使い始めに 1 回だけ出すヒント */
   #padHint {
@@ -422,6 +470,51 @@
   #rollGuide span:last-child { right: -38px; }
   #pad[hidden] ~ #padHint { bottom: 60px; }  /* パネルを畳んでいるときは、その分下に出す */
   /* 右下のボタンと重なるとき (幅の狭い画面など) は、JS (layoutPad) でパネルをボタンの上に置く */
+
+  /* 全体マップ: 拡大して箱が画面からはみ出したとき、左上に出す。今見えている範囲を青い枠で示す */
+  /* 左上: 全体マップのオン・オフと虫めがね (ドラッグして、拡大したい所に落とす) */
+  #topLeft {
+    position: fixed; z-index: 22; left: max(12px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top));
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  #topLeft[hidden] { display: none; }
+  #topLeft > button {
+    width: 40px; height: 40px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1;
+    border: 1px solid rgba(255,255,255,.3); background: rgba(20,22,28,.6); color: #fff; cursor: pointer;
+  }
+  #topLeft > button:hover { background: rgba(50,54,64,.85); }
+  #mapToggle.on { background: var(--accent); border-color: var(--accent); }
+  #mapToggle.idle { opacity: .5; }  /* 拡大していない: 出す地図がない */
+  #magnifier { position: relative; cursor: grab; touch-action: none; user-select: none; }
+  /* 拡大中: 押すと全体表示に戻ることを示す「−」の印 */
+  #magnifier.zoomed::after {
+    content: '−'; position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%;
+    display: grid; place-items: center; font: 700 14px/1 system-ui, sans-serif; color: #fff; background: var(--accent);
+  }
+  #magnifier.dragging::after { display: none; }
+  /* ドラッグ中: レンズのように大きくして指 (マウス) についてくる */
+  #magnifier.dragging {
+    cursor: grabbing; width: 72px; height: 72px; margin: -16px 0 0 -16px; font-size: 34px;
+    background: rgba(120,170,255,.18); border: 3px solid rgba(255,255,255,.85); box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  #magnifier.off-box { border-color: rgba(255,255,255,.35); opacity: .7; }  /* 箱の外: 落としても何もしない */
+  #minimap {
+    position: fixed; z-index: 20; left: max(12px, env(safe-area-inset-left)); top: calc(max(10px, env(safe-area-inset-top)) + 50px);
+    padding: 6px; border-radius: 10px; background: rgba(20,22,28,.6); border: 1px solid rgba(255,255,255,.18);
+    cursor: pointer; touch-action: none;
+  }
+  #minimap[hidden] { display: none; }
+  #minimap canvas { display: block; }
+  /* パンになる場所 (拡大中・Shift) では手のひら、パンしている間はつかんだ手 */
+  body.pan-zone #scene { cursor: grab; }
+  body.panning, body.panning #scene { cursor: grabbing; }
+
+  /* ---------- 箱の見た目 (look) ---------- */
+  /* ページが箱全体の形と見た目を変えている間 (about:lphone など)。
+     大きさは変えられないのでつまみと「サイズ」を隠し、正面以外の面のブラウザは隠しておく (中身は残す) */
+  body.look .resize-grip, body.look #sizeBtn { display: none; }
+  body.look .face:not(.front) > :not(.shade):not(.look-deco) { display: none !important; }
+  body.look .face:not(.front) { cursor: default; }
 
   /* ---------- ページから使う共通の部品 ---------- */
   /* 画面を揺らす (api.shake) */
@@ -453,13 +546,13 @@
   }
   .info p, .info ul { margin: 0; }
   .info ul { padding-left: 1.3em; }
-  .info dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; }
+  .info dl { display: grid; grid-template-columns: max-content 1fr; gap: 1px 14px; margin: 0; }
   .info dt { font-weight: 600; }
   .info dd { margin: 0; color: #444; }
   .info a { color: var(--accent); }
 
   .info footer {
-    margin-top: 16px; padding-top: 8px; border-top: 1px solid #e4e6eb;
+    margin-top: 12px; padding-top: 8px; border-top: 1px solid #e4e6eb;
     color: var(--muted); font-size: 12px;
   }
   /* 幅の狭いブラウザ (側面など) では 1 段にする */
@@ -494,31 +587,42 @@
 <div id="stSlider" hidden><div class="st-track"><div class="st-fill"></div><div class="st-knob"></div></div><span class="st-label"></span></div>
 <!-- 操作パネル: スティックを倒した方向に回る (遠くまで倒すほど速い) -->
 <div id="pad" hidden>
-  <!-- スティックの左側の縁を押す向きに合わせて、上が時計回り、下が反時計回り -->
-  <div class="roll-btns">
-    <button class="roll-right" data-i18n-title="rollRight">⟳</button>
-    <button class="roll-left" data-i18n-title="rollLeft">⟲</button>
+  <div class="pad-l">
+    <!-- スティックの左側の縁を押す向きに合わせて、上が時計回り、下が反時計回り -->
+    <div class="roll-btns">
+      <button class="roll-right" data-i18n-title="rollRight">⟳</button>
+      <button class="roll-left" data-i18n-title="rollLeft">⟲</button>
+    </div>
+    <div class="stick rot-stick" data-i18n-title="padTip">
+      <span class="arrow a-up">▲</span><span class="arrow a-down">▼</span>
+      <span class="arrow a-left">◀</span><span class="arrow a-right">▶</span>
+      <div class="knob"></div>
+    </div>
+    <button class="pad-hide" data-i18n-title="hidePad">×</button>
   </div>
-  <div class="stick" data-i18n-title="padTip">
-    <span class="arrow a-up">▲</span><span class="arrow a-down">▼</span>
-    <span class="arrow a-left">◀</span><span class="arrow a-right">▶</span>
-    <div class="knob"></div>
+  <div class="pad-r">
+    <div class="stick pan-stick" data-i18n-title="panTip">
+      <span class="arrow a-up">▲</span><span class="arrow a-down">▼</span>
+      <span class="arrow a-left">◀</span><span class="arrow a-right">▶</span>
+      <div class="knob"></div>
+    </div>
+    <div class="zoom-btns">
+      <button class="zoom-in" data-i18n-title="zoomIn">＋</button>
+      <button class="zoom-out" data-i18n-title="zoomOut">−</button>
+    </div>
   </div>
-  <div class="zoom-btns">
-    <button class="zoom-in" data-i18n-title="zoomIn">＋</button>
-    <button class="zoom-out" data-i18n-title="zoomOut">−</button>
-  </div>
-  <button class="pad-hide" data-i18n-title="hidePad">×</button>
 </div>
 <div id="padHint" data-i18n="dragHint"></div>
 <!-- 平行回転のドラッグ中だけ出す目安の円 (この外側をなぞると平行に回る) -->
+<div id="topLeft"><button id="mapToggle" data-i18n-title="mapTip">🗺️</button><button id="magnifier" data-i18n-title="magTip">🔍</button></div>
+<div id="minimap" hidden data-i18n-title="minimapTip"><canvas></canvas></div>
 <div id="rollGuide"><span>⟲</span><span>⟳</span></div>
 
 <script>
 (() => {
   // バージョン。VERSION は機能を足したときなどに手で上げる (v0.1 → v0.2)。
   // BUILD は node deploy.mjs が公開用のファイルにだけデプロイした日付 (2026.10.18 など) を書き込む。手元では dev
-  const VERSION = 'v0.1';
+  const VERSION = 'v0.2';
   const BUILD = 'dev';
 
   const W = 960, H = 600;
@@ -531,6 +635,13 @@
   // このサイト自身を開くと入れ子になる。ブラウザは祖先と同じ URL の iframe を
   // 読み込まないので、階層ごとに ?depth= を変えて別の URL にする
   const depth = Number(new URLSearchParams(location.search).get('depth')) || 0;
+  // リセットの段階 (resetAll) 用。setSize などが起動中にも使うので先に用意する
+  let resetFresh = false;  // リセットしてから (見た目を始めてから) 何も触っていない
+  let sizedBy = null;      // 箱の大きさを決めたページ { tab, entry } (setBoxSize)
+  let instantStart = false;  // ?url= のページを開いている途中 (箱の形が変わるのをアニメーションしない)
+  // ?url=about:lphone のように、最初に開く内蔵ページを指定できる (外のサイトや検索語は開かない。
+  // 他人がこのサイトの中に別のサイトを見せるリンクを作れないように)。ないページならスタートページ
+  const startPage = depth ? null : new URLSearchParams(location.search).get('url')?.trim().match(/^about:([\w-]+)$/i)?.[1].toLowerCase();
   function selfUrl(d) {
     const u = new URL(location.href);
     u.search = `?depth=${d}&lang=${lang}`;
@@ -559,7 +670,15 @@
   // 画面に出る文字。[日本語, English]。関数は引数を受け取って文字を作る
   const STR = {
     reset: ['リセット', 'Reset'],
-    resetTip: ['向きと大きさを正面に戻す', 'Reset the angle and size'],
+    resetTip: ['表示を元に戻す (押すたびに 1 段ずつ戻る)', 'Reset the view (one step per press)'],
+    resetAgain: ['もう一度リセットで 3D Browser に戻る', 'Press Reset again to return to 3D Browser'],
+    resetAgainHome: ['もう一度リセットでホーム画面へ', 'Press Reset again for the home screen'],
+    resetAgainSize: ['もう一度リセットで標準の大きさに', 'Press Reset again for the standard size'],
+    resetAgainTop: ['もう一度リセットでトップ画面へ', 'Press Reset again for the start page'],
+    mapTip: ['全体マップ (拡大中に出す。押すとオン・オフ)', 'Overview map (shown while zoomed in; tap to turn on/off)'],
+    magTip: ['虫めがね: ドラッグして、拡大したい所に落とす', 'Magnifier: drag and drop where you want to zoom in'],
+    magTipOut: ['虫めがね: ドラッグして落とした所を拡大。押すと全体表示に戻る', 'Magnifier: drag and drop to zoom in; tap to see the whole'],
+    magHint: ['虫めがねをドラッグして、拡大したい所に落とします', 'Drag the magnifier and drop it where you want to zoom in'],
     seeThrough: ['透過', 'See-through'],
     seeThroughTip: ['面を半透明にして反対側を透かして見る (長押しで透け具合を変える)', 'Make the faces translucent to see the other side (hold to adjust)'],
     stLabel: [(p) => `透け ${p}%`, (p) => `Clear ${p}%`],
@@ -585,8 +704,10 @@
     sizeTall: ['超縦長', 'Super tall'],
     sizeMax: ['最大化', 'Maximize'],
     rollRight: ['時計回りに回す (長押しで速さを選び、離すと回し続ける)', 'Rotate clockwise (hold to pick a speed, release to keep spinning)'],
+    minimapTip: ['全体マップ (クリック・ドラッグでその場所を見る)', 'Overview (click or drag to look there)'],
     zoomOut: ['縮小 (長押しで速さを選び、離すと遠ざかり続ける)', 'Zoom out (hold to pick a speed, release to keep flying out)'],
     hidePad: ['操作パネルを隠す', 'Hide the control pad'],
+    panTip: ['パン (拡大しているとき、見る場所をずらす)', 'Pan (move the view while zoomed in)'],
     showPad: ['操作パネルを表示', 'Show the control pad'],
     dragHint: ['枠や背景をドラッグしても回せます', 'You can also drag the frame or the background'],
     dragHintFirst: ['枠や背景をドラッグすると回せます', 'Drag the frame or the background to rotate'],
@@ -602,6 +723,7 @@
       'Type a word to search Wikipedia, or a URL to open that site'],
     chipTokyoTower: ['東京タワー', 'Tokyo Tower'],
     chipKenon: ['ケノン脱毛', 'Ke-non'],
+    chipAsteroids: ['小惑星', 'Asteroids'],
     chipCat: ['猫動画', 'Cat video'],
     info: ['説明', 'About'],
     embedNotice: ['表示されない場合、このサイトは埋め込みを拒否しています。',
@@ -614,7 +736,7 @@
     searchFailed: [(e) => `検索に失敗しました: ${e}`, (e) => `Search failed: ${e}`],
     infoTitle: ['3D Browser について', 'About 3D Browser'],
     // 説明ページの「こんなページも開けます」
-    infoThis: ['この 3D Browser 自身 (ブラウザの中のブラウザの中の…)', 'This 3D Browser itself (a browser in a browser in a…)'],
+    infoThis: ['この 3D Browser 自身 (ブラウザの中のブラウザの中の…)', 'This 3D Browser, nested inside itself'],
     infoSelf: ['このページ', 'This page'],
   };
   const t = (key, ...args) => {
@@ -674,6 +796,7 @@
   //   title: タブ名 (STR のキー、または文字を返す関数)
   //   info: 説明ページの一覧に出す説明 (STR のキー)
   //   langRerender: 言語を切り替えたら描き直す (文字だけのページ)。false なら題名だけ変える
+  //   icon: アイコン (絵文字)。まとめのページやスマホのフォルダに出す
   //   featured: スタートページで先頭に並べる
   //   glass: 透過モードのとき、中身の背景を透明にする (ガラスに描いたように見せる。ページ側も白い背景を描かない)
   //   render(tab, api): ページの中身を tab.pane に作る。api は本体の機能の窓口 (pageApi)
@@ -688,12 +811,45 @@
       style.textContent = def.css;
       document.head.appendChild(style);
     }
+    if (def.group) addGroup(def.group);
     PAGES.set(def.id, def);
   }
+  // まとめ (フォルダ): group: { id, icon, title: [日本語, English], info: [日本語, English] } を付けたページは、
+  // スタートページと説明ページでは 1 つにまとめ、about:<id> のまとめのページに並べる。最初に出てきた場所に置く
+  function addGroup(g) {
+    if (PAGES.has(g.id)) return;
+    STR[`grp_${g.id}`] = g.title;
+    STR[`grpInfo_${g.id}`] = g.info;
+    PAGES.set(g.id, {
+      id: g.id, title: `grp_${g.id}`, info: `grpInfo_${g.id}`, icon: g.icon, menu: true, langRerender: true, isGroup: true,
+      render: (tab) => renderGroup(tab, g.id),
+    });
+  }
+  // まとめのページ: パソコンのフォルダの窓のように、大きなアイコンと名前を並べる (1 回クリックで開くリンク)。
+  // マウスを乗せると説明が出る
+  function renderGroup(tab, id) {
+    const g = PAGES.get(id);
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.innerHTML = `<div class="group-page"><h1>📁 ${escapeHtml(pageTitle(g))}</h1><div class="group-list"></div></div>`;
+    for (const d of groupMembers(id)) {
+      const a = document.createElement('a');
+      a.href = '#';
+      a.title = `${t(d.info)} (about:${d.id})`;
+      a.innerHTML = `<span class="group-icon">${d.icon || '📄'}</span><span>${escapeHtml(pageTitle(d))}</span>`;
+      a.addEventListener('click', (e) => { e.preventDefault(); navigate(tab, `about:${d.id}`); });
+      page.querySelector('.group-list').appendChild(a);
+    }
+    tab.pane.appendChild(page);
+  }
+  const groupMembers = (id) => [...PAGES.values()].filter((d) => d.group?.id === id);
+  // 中のページが 2 つ以上あるまとめだけをフォルダにする (1 つだけなら、そのページをそのまま並べる)
+  const realGroup = (id) => groupMembers(id).length >= 2;
   window.B3D = { registerPage };
   const pageTitle = (def) => typeof def.title === 'function' ? def.title() : t(def.title);
   // スタートページと説明ページに並べるページ (about:this と about:info は決まった位置に置く)
-  const menuPages = () => [...PAGES.values()].filter((d) => d.menu);
+  // まとめに入っているページは並べない (まとめのページから開く)
+  const menuPages = () => [...PAGES.values()].filter((d) => d.menu && (d.isGroup ? realGroup(d.id) : !(d.group && realGroup(d.group.id))));
 
   // ページを離れるとき (別のページへ移る・タブを閉じる) に、ページが登録した後片付けを呼ぶ
   function disposePage(tab) {
@@ -725,6 +881,7 @@
     disposePage(tab);
     tab.glass = entry?.type === 'page' && !!PAGES.get(entry.id).glass;
     tab.pane.innerHTML = '';
+    tab.pane.dataset.kind = entry ? entry.type : 'start';  // 表示しているものの種類 (page / url / search / start)。スマホの自動回転などで使う
     if (!entry) renderStart(tab);
     else if (entry.type === 'page') renderPage(tab, PAGES.get(entry.id));
     else if (entry.type === 'url') renderUrl(tab, entry.value);
@@ -734,12 +891,16 @@
 
   function renderPage(tab, def) {
     setMeta(tab, pageTitle(def), `about:${def.id}`);
-    def.render(tab, pageApi(tab));
+    def.render(tab, pageApi(tab, def));
   }
+
+  // ページがキーボードを借りているか (ゲームなど)。借りている間は、矢印キーで箱を回さない
+  const keyCaptures = new Set();
+  const keyCaptured = () => [...keyCaptures].some((f) => f());
 
   // ページに渡す窓口。ページは本体の中身を直接さわらず、これだけを使う。
   // ページを離れると、onFrame の処理、add3d で出した要素、acceptItem の受け取り口は自動で片付く
-  function pageApi(tab) {
+  function pageApi(tab, def) {
     const api = {
       t, pick,
       lang: () => lang,
@@ -773,6 +934,60 @@
         scene.classList.add('shake');
       },
       seeThrough: () => document.body.classList.contains('see-through'),
+      // ガラスのページの背景を透明にするとき (透過モードか、ガラスの見た目の中)
+      // まとめ (フォルダ) とその中のページ: [{ id, title, pages: ['kobito', …] }] (中のページが 2 つ以上のものだけ)
+      groups: () => [...PAGES.values()].filter((d) => d.isGroup && realGroup(d.id))
+        .map((g) => ({ id: g.id, title: pageTitle(g), pages: groupMembers(g.id).map((d) => d.id) })),
+      // ほかのページの名前・アイコンなど ({ icon, title, appBg }。appBg: スマホのホーム画面のアイコンの背景)。ないページなら null
+      pageInfo: (id) => { const d = PAGES.get(id); return d ? { icon: d.icon, title: pageTitle(d), appBg: d.appBg } : null; },
+      glassMode: () => document.body.classList.contains('see-through') || document.body.classList.contains('look-glass'),
+      // 箱全体の形と見た目を変える (このタブに付く)。{ w, h, d, minD }。すでにこのタブで同じ見た目なら何もしない。
+      // 新しく始めたら true を返す (飾りを付けるのはそのときだけ)
+      setLook(name, size) {
+        if (look?.tab === tab && look.name === name) return false;
+        startLook(tab, def.id, name, size);
+        return true;
+      },
+      look: () => (look?.tab === tab ? look.name : null),  // このタブが変えている見た目の名前
+      roll: () => ((rz % 360) + 360) % 360,  // 箱を画面の上で回している角度 (0〜360、時計回り)
+      // 見た目の飾り (面や箱に足す要素)。見た目を戻すときに消える。parent: 'box' か面の名前 ('front' など)
+      lookDecorate(el, parent = 'box') {
+        if (look?.tab !== tab) return el;
+        el.classList.add('look-deco');
+        (parent === 'box' ? box : box.querySelector(`.face.${parent}`)).appendChild(el);
+        look.els.push(el);
+        return el;
+      },
+      onLookEnd(fn) { if (look?.tab === tab) look.ends.push(fn); },
+      // 箱の大きさを変えて正面を向け、全体が見えるまで引く (「サイズ」メニューと同じ)。見た目を変えている間は何もしない
+      setBoxSize(w, h) {
+        if (look) return;
+        setPreset(w, h, 'preset');
+        sizedBy = { tab, entry: tab.history[tab.index] };  // リセットの 1 回目では、この大きさを保つ
+      },
+      // 拡大していて、要素 el の中の点 (x, y) が画面の外にあるときだけ、そこが画面の真ん中に来るよう視点をなめらかに動かす
+      // (面がほぼ正面を向いているときだけ)。at = [ax, ay] で行き先を画面の割合で変えられる (例: [0.5, 0.85] は下寄り)。動かしたら true を返す
+      focusPoint(el, x, y, [ax, ay] = [0.5, 0.5]) {
+        const face = tab.browser?.face;
+        if (!face || faceFacing(face) < 0.9 || dragging) return;
+        const r = el.getBoundingClientRect();
+        const sx = r.left + x * r.width / el.clientWidth, sy = r.top + y * r.height / el.clientHeight;
+        const m = 40;
+        if (sx > m && sx < innerWidth - m && sy > m && sy < innerHeight - m) return;
+        const [px, py] = panPx();
+        target = { rx, ry, rz, pan: [(px + innerWidth * ax - sx) / zoom, (py + innerHeight * ay - sy) / zoom] };
+        return true;
+      },
+      // このページを表示している間 (タブが前に出ていて、文字の入力中でないとき)、矢印キーで箱を回さない。
+      // ページを離れると元に戻る。今キーを借りているかを返す関数を返す
+      captureKeys() {
+        const f = () => tab.browser?.active === tab && !tab.pane.hidden &&
+          !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+        keyCaptures.add(f);
+        api.onCleanup(() => keyCaptures.delete(f));
+        return f;
+      },
+      endLook: () => { if (look?.tab === tab) endLook(); },
       giveItem,
       // ほかのページからもらったアイテムを el の上で受け取る。fn(el の中の x, y)
       acceptItem(kind, el, fn) {
@@ -887,7 +1102,7 @@
   // 外部サイトのボタンには ↗ を付けて、内蔵ページ (about:…, class="internal") と見分けられるようにする。行き先はツールチップに出す
   const chips = (list) => list.map(([label, q = label]) =>
     `<button data-q="${q}" title="${escapeHtml(isUrl(q) || q.startsWith('about:') ? q : t('searchTitle', q))}"${q.startsWith('about:') ? ' class="internal"' : ''}>${label}</button>`).join('');
-  const pageChips = (defs) => defs.map((d) => [pageTitle(d), `about:${d.id}`]);
+  const pageChips = (defs) => defs.map((d) => [`${d.isGroup ? '📁 ' : ''}${pageTitle(d)}`, `about:${d.id}`]);
 
   function renderStart(tab) {
     setMeta(tab, t('newTab'), '');
@@ -902,7 +1117,8 @@
              [t('chipCat'), 'https://www.youtube.com/watch?v=DPiAFqesQ5E'], ['3D Browser', 'about:this'],
              [t('chipTokyoTower')], [t('chipKenon'), 'https://ケノン.com/'],
              ['zoomquilt', 'https://zoomquilt.org/'],
-             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html']])}
+             ['Aquarium', 'https://webglsamples.org/aquarium/aquarium.html'],
+             [t('chipAsteroids'), 'https://www.asterank.com/3d/']])}
           ${chips([...pageChips(menuPages().filter((d) => !d.featured)), [t('info'), 'about:info']])}
         </div>
       </div>`;
@@ -935,7 +1151,7 @@
           <h2>操作方法</h2>
           <dl>
             <dt>回す</dt><dd>ブラウザの枠 (タブバーの空いている所など) か背景をドラッグ</dd>
-            <dt>平行に回す</dt><dd>画面の外側の背景を円を描くようにドラッグ、2 本指でひねる、パネルの ⟲ ⟳</dd>
+            <dt>平行に回す</dt><dd>中心から離れた所を円を描くようにドラッグ、2 本指でひねる、パネルの ⟲ ⟳</dd>
             <dt>大きさ</dt><dd>右下の角をドラッグ。黄の丸で最小化、緑の丸で最大化</dd>
             <dt>拡大・縮小</dt><dd>画面の外でホイール、または Ctrl + ホイール</dd>
             <dt>元に戻す</dt><dd>右下の「リセット」か、背景をダブルクリック</dd>
@@ -967,7 +1183,7 @@
           <h2>How to use</h2>
           <dl>
             <dt>Rotate</dt><dd>Drag the frame (e.g. the tab bar) or the background</dd>
-            <dt>Spin</dt><dd>Circle-drag the outer background, two-finger twist, or ⟲ ⟳</dd>
+            <dt>Spin</dt><dd>Circle-drag far from the center, two-finger twist, or ⟲ ⟳</dd>
             <dt>Resize</dt><dd>Drag the bottom-right corner, or the yellow / green dots</dd>
             <dt>Zoom</dt><dd>Mouse wheel outside the page, or Ctrl + wheel</dd>
             <dt>Reset</dt><dd>"Reset" at the bottom right, or double-click the background</dd>
@@ -1195,6 +1411,7 @@
       },
 
       closeTab(tab) {
+        lookTabGone(tab);
         disposePage(tab);
         browser.removeTab(tab);
       },
@@ -1238,6 +1455,7 @@
 
   function moveTab(tab, to) {
     if (tab.browser === to) return;
+    lookTabGone(tab);
     tab.browser.removeTab(tab);
     to.addTab(tab);
   }
@@ -1252,6 +1470,7 @@
   }
 
   function openFace(face, tab = createTab()) {
+    if (look) return;
     makeBrowser(face).addTab(tab);
     // 開いた面がこちらを向くように回す
     const [trx, try_] = FACING[Object.keys(FACING).find((c) => face.classList.contains(c))];
@@ -1274,7 +1493,7 @@
 
   // ブラウザを閉じて元の面に戻す。タブが残っていれば一緒に捨てる
   function closeFace(face) {
-    for (const tab of face._browser?.tabs || []) disposePage(tab);
+    for (const tab of face._browser?.tabs || []) { lookTabGone(tab); disposePage(tab); }
     face.classList.remove('browser', 'glass');
     face._browser = null;
     // 陰・ロゴ・大きさを変えるつまみは残す
@@ -1288,12 +1507,31 @@
   let rx = -10, ry = 22;          // 現在の角度 (deg)
   let rz = 0;                     // 平行回転 (画面に対して時計回り = +)
   let vx = 0, vy = 0, vz = 0;     // 慣性
+  let pvx = 0, pvy = 0;           // パンの慣性 (画面の px/フレーム)。はじくと少し動き続ける
+  // パンの惰性の速さ: 動きの間隔がとても短いと速く見積もりすぎるので、間隔は 8ms 以上として、速さにも上限を付ける
+  const flingV = (d, dt) => Math.max(-40, Math.min(40, d / Math.max(8, dt) * 16));
   let zoom = 1;
   let dragging = false, lastX = 0, lastY = 0, lastT = 0;
   let down = null;                // クリック判定用: 押した位置と要素
   let target = null;              // 自動で回すときの目標 { rx, ry, rz, zoom? }
 
   const ROT = () => `rotateZ(${rz}deg) rotateX(${rx}deg) rotateY(${ry}deg)`;
+  // 視点の上下左右のずれ (パン)。拡大率で割った値で持つので、拡大縮小すると画面の中心を基準にずれも伸び縮みする
+  let panU = [0, 0];
+  const panPx = () => [panU[0] * zoom, panU[1] * zoom];        // 画面上のずれ (px)
+  const boxCenter = () => [innerWidth / 2 + panU[0] * zoom, innerHeight / 2 + panU[1] * zoom];
+  // 画面上のずれを pan にする。箱が画面から完全に出てしまわないよう、端が少し残るところまでにする
+  function setPan(px, py) {
+    const s = fitScale();
+    const mx = boxW * s / 2 + innerWidth / 2 - 60, my = boxH * s / 2 + innerHeight / 2 - 60;
+    panU = [Math.max(-mx, Math.min(mx, px)) / zoom, Math.max(-my, Math.min(my, py)) / zoom];
+  }
+  // 画面の点 (qx, qy) を動かさずに、拡大率を z にする (ホイールはカーソル、ピンチは指の真ん中を基準に)
+  function zoomAt(z, qx, qy) {
+    const [cx, cy] = boxCenter(), k = z / zoom;
+    zoom = z;
+    setPan(qx - (qx - cx) * k - innerWidth / 2, qy - (qy - cy) * k - innerHeight / 2);
+  }
 
   const faces = [
     ['.front',  [0, 0, 1]], ['.back',   [0, 0, -1]],
@@ -1311,8 +1549,13 @@
     return Math.min(innerWidth * 0.82 / W, innerHeight * 0.78 / H) * zoom;
   }
 
+  // 奥へずらす量 (scale は z を拡大しないので、厚みの半分そのまま)
+  const depthBack = () => (pushBack ? boxD / 2 : 0);
   function apply() {
-    box.style.transform = `scale(${fitScale()}) ${ROT()}`;
+    const [px, py] = panPx();
+    box.style.transform = `translate(${px}px, ${py}px) translateZ(${-depthBack()}px) scale(${fitScale()}) ${ROT()}`;
+    // 遠近の中心も一緒にずらす (ずらしても、箱の見え方は同じまま平行に動く)
+    scene.style.perspectiveOrigin = `calc(50% + ${px}px) calc(50% + ${py}px)`;
     // CSS は rotateY → rotateX → rotateZ の順で点に作用する
     const a = ry * Math.PI / 180, b = rx * Math.PI / 180, c = rz * Math.PI / 180;
     for (const f of faces) {
@@ -1344,8 +1587,8 @@
     // 向きを目標へ動かすので、スティックのロックは外す (大きさも動かすなら ＋/− のロックも)
     stopStickLatch();
     if (tzoom !== undefined) stopZoomLatch();
-    target = { rx: trx, ry: try_, rz: trz, zoom: tzoom };
-    vx = vy = vz = 0;
+    target = { rx: trx, ry: try_, rz: trz, zoom: tzoom, pan: tzoom !== undefined ? [0, 0] : undefined };
+    vx = vy = vz = pvx = pvy = 0;
   }
 
   // ---------- ブラウザの大きさ ----------
@@ -1355,21 +1598,27 @@
   const TALL_W = 420, TALL_H = 2600;  // 超縦長
   // 厚み: 元は D0。側面・上下の面のつまみで厚くできる。上限は幅・高さの短いほう (立方体まで)
   const D0 = 56;
+  let minDepth = D0;  // 厚みの下限。見た目を変えている間 (look) だけ薄くできる
+  let maxDepth = 0;   // 厚みの上限 (0 = 幅・高さの短いほう)。見た目を変えている間だけ、もっと厚くできる (とても厚いスマホなど)
+  let pushBack = false;  // 箱を厚みの半分だけ奥へずらす (とても厚い箱でも、正面がいつもの位置に来るように)
+  const depthCap = (w, h) => maxDepth || Math.min(w, h);
   let boxW = W, boxH = H, boxD = D0;
   let sizeMode = 'normal', savedSize = null;  // 最大化・最小化の前の大きさ
   let sizeAnim = 0;
 
   function applySize() {
-    boxD = Math.max(D0, Math.min(boxD, boxW, boxH));  // 幅や高さを小さくしたら、厚みも一緒に縮める
+    boxD = Math.max(minDepth, Math.min(boxD, depthCap(boxW, boxH)));  // 幅や高さを小さくしたら、厚みも一緒に縮める
     document.documentElement.style.setProperty('--W', `${boxW}px`);
     document.documentElement.style.setProperty('--H', `${boxH}px`);
     document.documentElement.style.setProperty('--D', `${boxD}px`);
+    if (pushBack) apply();  // 奥へずらす量は厚みで変わる
   }
   // animate: なめらかに変える (約 0.35 秒)。d (厚み) を省くと今の厚みのまま
   function setSize(w, h, animate = false, d = boxD) {
+    sizedBy = null;  // ページが決めた大きさ (setBoxSize) から変わった
     w = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
     h = Math.round(Math.min(MAX_H, Math.max(MIN_H, h)));
-    d = Math.round(Math.max(D0, Math.min(d, w, h)));
+    d = Math.round(Math.max(minDepth, Math.min(d, depthCap(w, h))));
     cancelAnimationFrame(sizeAnim);
     if (!animate) { boxW = w; boxH = h; boxD = d; applySize(); return; }
     const w0 = boxW, h0 = boxH, d0 = boxD, t0 = performance.now();
@@ -1385,6 +1634,7 @@
 
   // 緑 = 最大化 (画面いっぱい) / 黄 = 最小化。もう一度押すと元の大きさに戻る
   function toggleSizeMode(mode) {
+    if (look) return;  // 見た目を変えている間は大きさを変えない
     if (sizeMode === mode) {
       sizeMode = 'normal';
       setSize(savedSize.w, savedSize.h, true);
@@ -1407,9 +1657,17 @@
   function setPreset(w, h, mode = 'preset') {
     if (sizeMode === 'normal') savedSize = { w: boxW, h: boxH };
     sizeMode = mode;
-    setSize(w, h, true);
-    const s = baseScale();
-    turnTo(0, 0, Math.max(0.15, Math.min(1, innerWidth * 0.9 / (w * s), innerHeight * 0.85 / (h * s))));
+    setSize(w, h, !instantStart);
+    fitFront(w, h);
+  }
+  // 正面を向けて、全体 (幅 w・高さ h) が見える大きさまで引く
+  function fitFront(w = boxW, h = boxH) {
+    const s = baseScale(), z = Math.max(0.15, Math.min(1, innerWidth * 0.9 / (w * s), innerHeight * 0.85 / (h * s)));
+    if (!instantStart) return turnTo(0, 0, z);
+    // ?url= で開いたとき: 動かさずに、いきなりその向きと大きさにする
+    stopLatches();
+    rx = ry = rz = vx = vy = vz = pvx = pvy = 0; zoom = z; panU = [0, 0]; target = null;
+    apply();
   }
   const setTall = () => setPreset(TALL_W, TALL_H, 'tall');
 
@@ -1446,12 +1704,132 @@
   }, true);
   addEventListener('keydown', (e) => { if (e.key === 'Escape') sizeMenu.hidden = true; });
 
+  // ---------- 箱の見た目 (look) ----------
+  // ページが箱全体の形と見た目を変える (about:lphone など)。始めたタブに付き、そのタブで別のページへ移っても続く。
+  // リセット・タブを閉じる・タブを別の面へ移す・面を閉じると元に戻る
+  let look = null;  // { name, tab, page, saved: { w, h, d }, els: [], ends: [] }
+  // glass: その見た目の中では、ガラスのページ (小人・お絵描き) の背景をいつも透明にする (透過モードと同じ)
+  // maxD: 厚みの上限 (幅・高さより厚くするとき)。pushBack: 箱を厚みの半分だけ奥へずらす (とても厚いとき)
+  function startLook(tab, page, name, { w, h, d, minD = D0, maxD = 0, pushBack: back = false, glass = false }) {
+    // 別の見た目から切り替えるときは、最初の (見た目を変える前の) 大きさを引き継ぐ
+    // (リセットで開き直すときは lookSaved で引き継ぐ)
+    const saved = look ? look.saved : lookSaved || { w: boxW, h: boxH, d: boxD };
+    if (look) endLook(false);
+    look = { name, tab, page, saved, els: [], ends: [] };
+    resetFresh = true;
+    document.body.classList.toggle('look-glass', glass);
+    stopLatches();
+    sizeMenu.hidden = true;
+    sizeMode = 'normal';
+    minDepth = minD;
+    maxDepth = maxD;
+    pushBack = back;
+    document.body.classList.add('look', `look-${name}`);
+    setSize(w, h, !instantStart, d);
+    fitFront(w, h);
+  }
+  // 元に戻す。restore: 大きさも始める前に戻す (リセットのときは、リセットが大きさを戻す)
+  // toStart: 見た目を始めたページを開いたままなら、スタートページにする
+  function endLook(restore = true, toStart = true) {
+    if (!look) return;
+    const { tab, page, saved, els, ends, name } = look;
+    look = null;
+    for (const fn of ends) fn();
+    for (const el of els) el.remove();
+    document.body.classList.remove('look', `look-${name}`, 'look-glass');
+    minDepth = D0;
+    maxDepth = 0;
+    pushBack = false;
+    apply();
+    if (restore) setSize(saved.w, saved.h, true, saved.d);
+    // 見た目を始めたページ (ホーム画面) を開いたままなら、普通のブラウザではスタートページにする
+    const entry = tab.history[tab.index];
+    if (toStart && tab.browser && entry?.type === 'page' && entry.id === page) {
+      tab.history.splice(tab.index + 1); tab.history.push(null); tab.index = tab.history.length - 1;
+      render(tab);
+    }
+  }
+  // タブがなくなる・移るときに、そのタブが見た目を変えていたら元に戻す
+  const lookTabGone = (tab) => { if (look?.tab === tab) endLook(); };
+
+  // リセットは段階的に戻す。触っていたら (resetFresh でなければ)、まず表示だけ戻す:
+  // - 見た目 (スマホ) の中でアプリを開いている: 表示位置だけ → ホーム画面 (見た目の最初の表示) → 普通の 3D Browser
+  // - 見た目のホーム画面: 最初の表示 (開き直す) → 普通の 3D Browser
+  // - ページが箱の大きさを決めている (setBoxSize。縦長のゲームなど): 大きさを保って表示位置だけ → 標準の大きさ
+  let lookSaved = null;
+  function resetHint(key) {
+    padHint.textContent = t(key);
+    padHint.dataset.i18n = key;
+    padHint.classList.add('show');
+    clearTimeout(resetHint.timer);
+    clearTimeout(resetHint.timer2);  // 前の案内の片付けが、新しい案内の文字を上書きしないように
+    resetHint.timer = setTimeout(() => {
+      padHint.classList.remove('show');
+      resetHint.timer2 = setTimeout(() => { padHint.textContent = t('dragHint'); padHint.dataset.i18n = 'dragHint'; }, 400);
+    }, 2500);
+  }
+  // 表示位置だけ戻す (正面を向けて全体が見える大きさに。ロックと透過も外す)。ページの中身と箱の大きさはそのまま
+  function resetViewOnly(hint) {
+    stopLatches();
+    resetSeeThrough();
+    fitFront();
+    resetFresh = true;
+    resetHint(hint);
+  }
+  // 見た目の最初の表示に戻す (始めたページを開き直す)
+  function resetLook() {
+    const { tab, page, saved } = look;
+    stopLatches();
+    resetSeeThrough();
+    endLook(false, false);
+    lookSaved = saved;
+    navigate(tab, `about:${page}`);  // ページが setLook し直し、正面を向けて全体が見える大きさにする
+    lookSaved = null;
+    resetFresh = true;
+    resetHint('resetAgain');
+  }
+  // リセットのボタン以外で何か操作したら、次のリセットはまた 1 段目から
+  for (const ev of ['pointerdown', 'wheel', 'keydown']) {
+    addEventListener(ev, (e) => { if (!(e.target instanceof Element && e.target.closest('#resetView'))) resetFresh = false; }, true);
+  }
+  const shown = (tab, entry) => tab.browser && tab.history[tab.index] === entry;
+
+  // 正面のブラウザで今見ているタブ (スタートページ以外を開いていれば)
+  function frontPageTab() {
+    const tab = box.querySelector('.face.front')._browser?.active;
+    return tab && tab.history[tab.index] ? tab : null;
+  }
+  let resetStep = '';  // 直前のリセットでしたこと ('full' = 向きと大きさを戻した)
+
   function resetAll() {
+    // 向きと大きさを戻したあと何も触らずにもう一度押したら、正面のブラウザをトップ画面 (スタートページ) にする
+    const top = !look && resetFresh && resetStep === 'full' && frontPageTab();
+    resetStep = '';
+    if (top) {
+      top.history.splice(top.index + 1); top.history.push(null); top.index = top.history.length - 1;
+      render(top);
+      resetFresh = false;
+      padHint.classList.remove('show');
+      return;
+    }
+    if (look) {
+      const entry = look.tab.history[look.tab.index], atHome = entry?.type === 'page' && entry.id === look.page;
+      if (!resetFresh && !atHome) return resetViewOnly('resetAgainHome');
+      if (!resetFresh || !atHome) return resetLook();
+    } else if (!resetFresh && sizedBy && shown(sizedBy.tab, sizedBy.entry)) {
+      return resetViewOnly('resetAgainSize');
+    }
+    if (padHint.dataset.i18n.startsWith('resetAgain')) padHint.classList.remove('show');  // 「もう一度リセットで…」はもう要らない
+    const fromLook = !!look;
+    endLook(false);
     stopLatches();
     resetSeeThrough();
     sizeMode = 'normal';
     setSize(W, H, true, D0);
     turnTo(0, 0, 1);
+    // スタートページ以外を見ていたら、次のリセットでトップ画面へ (スマホから戻ったときは、もうスタートページ)
+    resetFresh = !fromLook && !!frontPageTab();
+    if (resetFresh) { resetStep = 'full'; resetHint('resetAgainTop'); }
   }
 
   // 右下の角のつまみ。箱を傾けていても、マウスの動きを面の上の動きに直して大きさを変える。
@@ -1477,7 +1855,7 @@
     face.appendChild(grip);
     let last = null;
     grip.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || look) return;
       e.stopPropagation();
       grip.setPointerCapture(e.pointerId);
       last = { x: e.clientX, y: e.clientY };
@@ -1506,19 +1884,52 @@
 
   // 平行回転のドラッグ: 画面の中心からこの距離より外の背景をつかむと平行回転になる。
   // 縮小して箱が小さいときは、その分内側の円も小さくする
-  let dragMode = 'tilt', lastAngle = 0;
+  let dragMode = 'tilt', ballR = 1;  // ballR: トラックボールの玉の半径 (画面の px)
+  const ROLL_FROM = 0.6;              // 玉の半径のこの割合より内側ではロールを混ぜない
+  const AXIS_DECIDE = 10, AXIS_SNAP = 25;  // 動き始めの何 px で向きを決めるか、真横・真上から何度以内ならその軸だけにするか
+  let axisLock = null;                // このドラッグの回し方 ('roll' ロールだけ / 'x' 左右だけ / 'y' 上下だけ / 'free' 自由に傾ける)。null = まだ決めていない
   const rollRadius = () => 0.4 * Math.min(innerWidth, innerHeight) * Math.min(1, zoom);
   const rollGuide = $('rollGuide');
   function showRollGuide(on) {
     if (on) {
-      const r = rollRadius();
-      Object.assign(rollGuide.style, { width: `${r * 2}px`, height: `${r * 2}px` });
+      const r = rollRadius(), [cx, cy] = boxCenter();
+      Object.assign(rollGuide.style, { width: `${r * 2}px`, height: `${r * 2}px`, left: `${cx}px`, top: `${cy}px` });
     }
     rollGuide.classList.toggle('show', on);
   }
 
   // 操作できる要素やページ表示部分の上では回転しない
-  const interactive = (el) => el.closest('input, button, a, .panes, .tab, .resize-grip');
+  // ページの中でも、ページが `.pass-drag` を付けた所 (スマホのホーム画面の空いた所など) のドラッグは箱を回す・パンする。
+  // その中でも `.no-pass-drag` を付けた所はページが受ける
+  const interactive = (el) => el.closest('input, button, a, .tab, .resize-grip') ||
+    (el.closest('.panes') && (!el.closest('.pass-drag') || el.closest('.no-pass-drag')));
+
+  // トラックボールの玉の半径: 画面に映る箱がすっぽり入る大きさ (箱の枠をつかんで回してもロールしないように)。
+  // 箱が小さいときは、画面の短い辺の 0.4 倍
+  function trackballR() {
+    const hull = boxOutline(), xs = hull.map((q) => q[0]), ys = hull.map((q) => q[1]);
+    return Math.max(rollRadius(), Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2);
+  }
+  // 画面の点 (x, y) が、画面に映る箱の輪郭の中か、輪郭から near px 以内か
+  function onBox(x, y, near = 0) {
+    const hull = boxOutline(), [cx, cy] = boxCenter(), px = x - cx, py = y - cy;
+    let pos = 0, neg = 0, dist = Infinity;
+    hull.forEach(([ax, ay], i) => {
+      const [bx, by] = hull[(i + 1) % hull.length], ex = bx - ax, ey = by - ay;
+      const c = ex * (py - ay) - ey * (px - ax);  // 内側なら、どの辺から見ても同じ向き
+      if (c > 0) pos++; else if (c < 0) neg++;
+      const k = Math.max(0, Math.min(1, ((px - ax) * ex + (py - ay) * ey) / (ex * ex + ey * ey || 1)));
+      dist = Math.min(dist, Math.hypot(px - ax - k * ex, py - ay - k * ey));
+    });
+    return !(pos && neg) || dist <= near;
+  }
+  // 拡大中か: 箱が画面からはっきり (画面の短い辺の ZOOMED_OVER 倍より多く) はみ出している。
+  // 少しはみ出しているだけのときは、回転のまま (ドラッグのたびにパンと回転が入れ替わらないように)
+  const ZOOMED_OVER = 0.1;
+  function zoomedIn() {
+    const hull = boxOutline(), [cx, cy] = boxCenter(), m = ZOOMED_OVER * Math.min(innerWidth, innerHeight);
+    return hull.some(([x, y]) => cx + x < -m || cx + x > innerWidth + m || cy + y < -m || cy + y > innerHeight + m);
+  }
 
   // ---------- tab drag ----------
   // タブをドラッグして、別のブラウザや閉じている側面へ移動する
@@ -1541,10 +1952,16 @@
   // ---------- pinch (スマホの 2 本指で拡大縮小・ひねって平行回転) ----------
   // 回転・タブのドラッグより先に受けて、2 本目の指が触れたらそちらを取り消す
   const touches = new Map();   // pointerId -> { x, y }
-  let pinch = null;            // { d0, z0 }
+  let pinch = null;            // { d0, z0, a0, r0, m, twisting }
+  const TWIST_START = 12;      // ひねりがこの角度 (度) を超えるまではロールしない (ピンチ中の小さなひねりで回らないように)
+  let touchStartRot = null;    // 1 本目の指が触れたときの向き。2 本目が来たら、1 本目で回した分を取り消す
   const touchDist = () => {
     const [a, b] = [...touches.values()];
     return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  const touchMid = () => {
+    const [a, b] = [...touches.values()];
+    return [(a.x + b.x) / 2, (a.y + b.y) / 2];
   };
   const touchAngle = () => {
     const [a, b] = [...touches.values()];
@@ -1556,14 +1973,16 @@
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.size !== 2) return;
     e.stopImmediatePropagation();
-    // 1 本目で始まっていた回転やタブのドラッグはやめる
-    dragging = false; down = null; vx = vy = vz = 0;
+    // 1 本目で始まっていた回転やタブのドラッグはやめる。2 本の指は同時には触れないので、
+    // 2 本目が来るまでに 1 本目で回してしまった分は元に戻す
+    if (dragging && dragMode === 'tilt' && touchStartRot) ({ rx, ry, rz } = touchStartRot);
+    dragging = false; down = null; vx = vy = vz = pvx = pvy = 0;
     showRollGuide(false);
     if (tabDrag) { tabDrag.ghost?.remove(); tabDrag.over?.classList.remove('drop-target'); tabDrag = null; }
     document.body.classList.remove('dragging');
     stopRollLatch();
     stopZoomLatch();
-    pinch = { d0: touchDist(), z0: zoom, a0: touchAngle(), r0: rz };
+    pinch = { d0: touchDist(), z0: zoom, a0: touchAngle(), r0: rz, m: touchMid() };
     target = null;
   });
   scene.addEventListener('pointermove', (e) => {
@@ -1571,15 +1990,31 @@
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!pinch || touches.size < 2) return;
     e.stopImmediatePropagation();
-    zoom = Math.min(2.5, Math.max(0.15, pinch.z0 * touchDist() / pinch.d0));
-    rz = pinch.r0 + angleDiff(touchAngle(), pinch.a0);  // ひねった分だけ平行回転
+    // 指の真ん中を基準に拡大縮小し、指の真ん中が動いた分だけ視点を動かす
+    const m = touchMid(), now = performance.now(), dt = Math.max(1, now - (pinch.t || now - 16));
+    pvx = flingV(m[0] - pinch.m[0], dt); pvy = flingV(m[1] - pinch.m[1], dt);
+    pinch.t = now;
+    zoomAt(Math.min(2.5, Math.max(0.15, pinch.z0 * touchDist() / pinch.d0)), pinch.m[0], pinch.m[1]);
+    const [px, py] = panPx();
+    setPan(px + m[0] - pinch.m[0], py + m[1] - pinch.m[1]);
+    pinch.m = m;
+    // ひねった分だけ平行回転。TWIST_START を超えてから、そこから先の分だけ回す (急に跳ねないように)
+    const twist = angleDiff(touchAngle(), pinch.a0);
+    if (!pinch.twisting && Math.abs(twist) > TWIST_START) {
+      pinch.twisting = true;
+      pinch.a0 += Math.sign(twist) * TWIST_START;
+    }
+    if (pinch.twisting) rz = pinch.r0 + angleDiff(touchAngle(), pinch.a0);
     apply();
   });
   const endTouch = (e) => {
     if (!touches.delete(e.pointerId)) return;
     if (pinch) {
       e.stopImmediatePropagation();  // 指を離しても「クリック」扱いにしない
-      if (touches.size < 2) pinch = null;
+      if (touches.size < 2) {
+        if (performance.now() - (pinch.t || 0) > 80) pvx = pvy = 0;  // 止めてから離した場合は慣性なし
+        pinch = null;
+      }
     }
   };
   scene.addEventListener('pointerup', endTouch);
@@ -1588,26 +2023,29 @@
   scene.addEventListener('pointerdown', (e) => {
     const label = e.target.closest('.tab');
     if (e.button === 0 && label && !e.target.closest('.close')) {
+      if (look) return;
       tabDrag = { tab: label._tab, x: e.clientX, y: e.clientY, ghost: null, over: null };
       scene.setPointerCapture(e.pointerId);
       return;
     }
     if (e.button !== 0 || interactive(e.target)) return;
     dragging = true; target = null;
-    vx = vy = vz = 0;
+    vx = vy = vz = pvx = pvy = 0;
     lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
     down = { x: e.clientX, y: e.clientY, el: e.target };
-    // 箱の外の背景で、画面の中心から離れた所をつかんだら平行回転 (つまみを回すように)
-    const cx = innerWidth / 2, cy = innerHeight / 2;
-    dragMode = !e.target.closest('.face') && Math.hypot(e.clientX - cx, e.clientY - cy) > rollRadius() ? 'roll' : 'tilt';
-    if (dragMode === 'roll') {
-      stopRollLatch();  // 手でロールしたら、回し続けるのをやめる
-      lastAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
-      showRollGuide(true);
-    } else {
-      stopStickLatch();  // 手で傾けたら、スティックで回し続けるのをやめる
-    }
+    touchStartRot = e.pointerType === 'touch' ? { rx, ry, rz } : null;
+    axisLock = null;
     scene.setPointerCapture(e.pointerId);
+    // 拡大中 (箱がはっきりはみ出している) は、地図のようにつかんで見る場所をずらす (パン)。判定はドラッグの始めだけ
+    if (zoomedIn()) {
+      dragMode = 'pan';
+      document.body.classList.add('dragging', 'panning');
+      return;
+    }
+    dragMode = 'tilt';
+    ballR = trackballR();
+    stopRollLatch();   // 手で回したら、回し続けるのをやめる
+    stopStickLatch();
     document.body.classList.add('dragging');
   });
   scene.addEventListener('pointermove', (e) => {
@@ -1625,28 +2063,61 @@
       return;
     }
     if (!dragging) {
-      // マウスを乗せただけのとき: 平行回転になる場所ならカーソルを回転の矢印にする
-      const roll = e.pointerType === 'mouse' && !e.target.closest('.face') &&
-        Math.hypot(e.clientX - innerWidth / 2, e.clientY - innerHeight / 2) > rollRadius();
+      // マウスを乗せただけのとき: ドラッグしたら何が起きるかをカーソルで知らせる。
+      // パンになる所 (拡大中の背景や枠、Shift を押しているとき) は手のひら、ロールになる所 (玉の縁より外の背景) は回転の矢印
+      const mouse = e.pointerType === 'mouse', free = !interactive(e.target);
+      const pan = mouse && (e.shiftKey ? !e.target.closest('input, textarea') : free && zoomedIn());
+      const [cx, cy] = boxCenter();
+      const roll = mouse && !pan && free && !e.target.closest('.face') && Math.hypot(e.clientX - cx, e.clientY - cy) > trackballR();
+      document.body.classList.toggle('pan-zone', pan);
       document.body.classList.toggle('roll-zone', roll);
       return;
     }
     const now = performance.now();
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     const dt = Math.max(1, now - lastT);
-    if (dragMode === 'roll') {
-      // 画面の中心のまわりで、つかんだ点が回った角度だけ回す
-      const a = Math.atan2(e.clientY - innerHeight / 2, e.clientX - innerWidth / 2);
-      const d = angleDiff(a * 180 / Math.PI, lastAngle * 180 / Math.PI);
-      rz += d;
-      vz = d / dt * 16;
-      lastAngle = a;
+    if (dragMode === 'pan') {
+      const [px, py] = panPx();
+      setPan(px + dx, py + dy);
+      pvx = flingV(dx, dt); pvy = flingV(dy, dt);
+      if (dx || dy) panMoved = now;
       lastX = e.clientX; lastY = e.clientY; lastT = now;
       apply();
       return;
     }
-    ry += dx * 0.4; rx -= dy * 0.4;
-    vy = dx * 0.4 / dt * 16; vx = -dy * 0.4 / dt * 16;
+    // 動き始め (AXIS_DECIDE px) の向きで、そのドラッグの傾け方を決める: 横に近ければ左右だけ、縦に近ければ上下だけ、
+    // はっきり斜めなら自由に (指が少しぶれても斜めに回らないように)。決まるまでは動かさず、決まったら最初からの分をまとめて回す
+    // 動き始め (AXIS_DECIDE px) で、そのドラッグを「ロールだけ」か「傾けるだけ」に決める (混ぜない)。
+    // トラックボール方式で、動きを箱の中心のまわりを回る向き (接線) とそれ以外に分け、接線の分を中心からの距離に応じて
+    // ロールの分とみなす。ロールの分のほうが大きければロール、そうでなければ傾ける。傾けるときは、横に近ければ左右だけ、
+    // 縦に近ければ上下だけ、はっきり斜めなら自由に (指が少しぶれても斜めに回らないように)。
+    // 決まるまでは動かさず、決まったら最初からの分をまとめて回す
+    const [cx, cy] = boxCenter();
+    if (!axisLock) {
+      const ax = e.clientX - down.x, ay = e.clientY - down.y;
+      if (Math.hypot(ax, ay) < AXIS_DECIDE) return;
+      const px = down.x - cx, py = down.y - cy, r = Math.hypot(px, py);
+      let rollPart = 0, tiltPart = Math.hypot(ax, ay);
+      if (r > 1) {
+        // 0 (玉の半径の ROLL_FROM 倍まで) 〜 1 (玉の縁より外)。真ん中あたりではロールにしない
+        const q = Math.min(1, Math.max(0, (r / ballR - ROLL_FROM) / (1 - ROLL_FROM))), w = q * q * (3 - 2 * q);
+        const ux = -py / r, uy = px / r, along = ax * ux + ay * uy;  // 時計回りの接線の向き
+        rollPart = Math.abs(w * along);
+        tiltPart = Math.hypot(ax - w * along * ux, ay - w * along * uy);
+      }
+      const deg = Math.atan2(Math.abs(ay), Math.abs(ax)) * 180 / Math.PI;
+      axisLock = rollPart > tiltPart ? 'roll' : deg < AXIS_SNAP ? 'x' : deg > 90 - AXIS_SNAP ? 'y' : 'free';
+    }
+    let tx = dx, ty = dy, roll = 0;
+    if (axisLock === 'roll') {
+      // 箱の中心から見た指の角度が変わった分だけ回す (時計回りが +)
+      roll = angleDiff(Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI, Math.atan2(lastY - cy, lastX - cx) * 180 / Math.PI);
+      tx = ty = 0;
+    } else if (axisLock === 'x') ty = 0;
+    else if (axisLock === 'y') tx = 0;
+    rz += roll;
+    tiltScreen(-ty * 0.4, tx * 0.4);
+    vz = roll / dt * 16; vy = tx * 0.4 / dt * 16; vx = -ty * 0.4 / dt * 16;
     lastX = e.clientX; lastY = e.clientY; lastT = now;
     apply();
   });
@@ -1673,9 +2144,9 @@
     if (tabDrag) return endTabDrag(e);
     if (!dragging) return;
     dragging = false;
-    document.body.classList.remove('dragging');
+    document.body.classList.remove('dragging', 'panning');
     showRollGuide(false);
-    if (performance.now() - lastT > 80) vx = vy = vz = 0;  // 止めてから離した場合は慣性なし
+    if (performance.now() - lastT > 80) vx = vy = vz = pvx = pvy = 0;  // 止めてから離した場合は慣性なし
     // ほとんど動かさずに離した = クリック。側面ならブラウザを開く
     if (e.type === 'pointerup' && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 4) {
       const side = down.el.closest(OPENABLE);
@@ -1686,19 +2157,57 @@
   scene.addEventListener('pointerup', endDrag);
   scene.addEventListener('pointercancel', endDrag);
 
-  scene.addEventListener('dblclick', (e) => {
+  // 右ドラッグ・Shift + ドラッグ: どこをつかんでも (拡大してページが画面を覆っていても) 視点を上下左右に動かす。
+  // ページより先に受け取り (捕まえる段階)、ページには渡さない。文字の入力欄と、iframe の中は対象外
+  let panMoved = 0;  // 右ドラッグで動かした時刻 (直後の右クリックのメニューを出さないため)
+  scene.addEventListener('pointerdown', (e) => {
+    if (!(e.button === 2 || (e.button === 0 && e.shiftKey)) || e.target.closest('input, textarea')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragging = true; target = null; down = null;
+    vx = vy = vz = pvx = pvy = 0;
+    lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
+    dragMode = 'pan';
+    scene.setPointerCapture(e.pointerId);
+    document.body.classList.add('dragging', 'panning');
+  }, true);
+  scene.addEventListener('contextmenu', (e) => {
+    if (!interactive(e.target) || performance.now() - panMoved < 500) e.preventDefault();
+  });
+
+  // 背景のダブルクリック (ダブルタップ): リセット
+  function onDoubleClick(e) {
     // 閉じている面のダブルクリックは「開く」操作なので、向きのリセットはしない
     const face = e.target.closest(OPENABLE);
     if (interactive(e.target) || (face && !face.classList.contains('browser'))) return;
     resetAll();
+  }
+  scene.addEventListener('dblclick', (e) => {
+    if (performance.now() - lastDoubleTap < 500) return;  // ダブルタップで処理済み
+    onDoubleClick(e);
   });
+  // スマホのダブルタップ: ブラウザによっては dblclick が来ないので、2 回のタップの間隔と距離を自分で見る
+  let lastTap = null, lastDoubleTap = 0;
+  scene.addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch' || !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) return;
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+      lastTap = null;
+      lastDoubleTap = now;
+      onDoubleClick(e);
+    } else {
+      lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
+  }, true);
 
   scene.addEventListener('wheel', (e) => {
     // Ctrl+ホイール / ピンチは、どこでもブラウザ自体の拡大ではなく 3D の拡大縮小にする
     if (!e.ctrlKey && interactive(e.target)) return;
     e.preventDefault();
     stopZoomLatch();
-    zoom = Math.min(2.5, Math.max(0.15, zoom * Math.exp(-e.deltaY * 0.001)));
+    // リセットなどで向きを戻している途中なら、向きはそのまま戻し続け、大きさと位置は戻さない (ホイールの拡大が引き戻されないように)
+    if (target) target.zoom = target.pan = undefined;
+    zoomAt(Math.min(2.5, Math.max(0.15, zoom * Math.exp(-e.deltaY * 0.001))), e.clientX, e.clientY);
     apply();
   }, { passive: false });
 
@@ -1707,24 +2216,56 @@
   // 角度の差を -180〜180 に収める (最短方向で回すため)
   const angleDiff = (to, from) => ((to - from) % 360 + 540) % 360 - 180;
 
+  // 画面から見た向きで傾ける: 画面の横軸のまわりに dax 度、縦軸のまわりに day 度。
+  // 箱が逆さまでもロールしていても、右へ動かせば見えている箱が右へ回る。
+  // 今の向き (ROT() = rotateZ rotateX rotateY) の手前に回転を掛けてから、rz・rx・ry に分け直す
+  function tiltScreen(dax, day) {
+    if (!dax && !day) return;
+    const m = new DOMMatrix(`rotateY(${day}deg) rotateX(${dax}deg)`).multiply(new DOMMatrix(ROT()));
+    const deg = 180 / Math.PI;
+    const a = Math.asin(Math.max(-1, Math.min(1, m.m23))) * deg;
+    const b = Math.atan2(-m.m13, m.m33) * deg, c = Math.atan2(-m.m21, m.m22) * deg;
+    // 同じ向きの表し方は 2 通り ((a, b, c) と (180 - a, b + 180, c + 180))。今の角度に近いほうを選び、
+    // 360 度の倍数もそろえる (数字が急に飛んで、リセットなどが遠回りしないように)
+    const near = (v, ref) => ref + angleDiff(v, ref);
+    const k1 = [near(a, rx), near(b, ry), near(c, rz)], k2 = [near(180 - a, rx), near(b + 180, ry), near(c + 180, rz)];
+    const cost = (k) => Math.abs(k[0] - rx) + Math.abs(k[1] - ry) + Math.abs(k[2] - rz);
+    [rx, ry, rz] = cost(k1) <= cost(k2) ? k1 : k2;
+  }
+
   function tick() {
     padTick();
+    updateMinimap();
     if (!dragging && !padActive()) {
       if (target) {
         const drx = angleDiff(target.rx, rx), dry = angleDiff(target.ry, ry), drz = angleDiff(target.rz, rz);
         rx += drx * 0.12; ry += dry * 0.12; rz += drz * 0.12;
         if (target.zoom !== undefined) zoom += (target.zoom - zoom) * 0.12;
+        if (target.pan) panU = panU.map((v, i) => v + (target.pan[i] - v) * 0.12);
         if (Math.abs(drx) < 0.05 && Math.abs(dry) < 0.05 && Math.abs(drz) < 0.05 &&
-            (target.zoom === undefined || Math.abs(zoom - target.zoom) < 0.002)) {
+            (target.zoom === undefined || Math.abs(zoom - target.zoom) < 0.002) &&
+            (!target.pan || Math.hypot(panU[0] - target.pan[0], panU[1] - target.pan[1]) < 0.5)) {
+          if (target.pan) panU = [...target.pan];
           rx = target.rx; ry = target.ry; rz = target.rz;
           if (target.zoom !== undefined) zoom = target.zoom;
           target = null;
         }
         apply();
-      } else if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01 || Math.abs(vz) > 0.01) {
-        rx += vx; ry += vy; rz += vz;
-        vx *= 0.95; vy *= 0.95; vz *= 0.95;
-        apply();
+      } else {
+        if (Math.abs(vx) > 0.01 || Math.abs(vy) > 0.01 || Math.abs(vz) > 0.01) {
+          rz += vz;
+          tiltScreen(vx, vy);  // 惰性も画面から見た向きで
+          vx *= 0.95; vy *= 0.95; vz *= 0.95;
+          apply();
+        }
+        // パンの惰性。端に当たったら、その向きは止める
+        if (Math.abs(pvx) > 0.05 || Math.abs(pvy) > 0.05) {
+          const [px, py] = panPx();
+          setPan(px + pvx, py + pvy);
+          const [nx, ny] = panPx();
+          pvx = nx === px ? 0 : pvx * 0.92; pvy = ny === py ? 0 : pvy * 0.92;
+          apply();
+        }
       }
     }
     requestAnimationFrame(tick);
@@ -1843,7 +2384,191 @@
     if (stSkipClick) { stSkipClick = false; return; }
     document.body.classList.toggle('see-through');
   });
+  // ---------- 全体マップ ----------
+  // 拡大して箱が画面からはみ出したとき、左上に箱全体の形 (今の向き) と、今見えている範囲 (青い枠) を出す。
+  // マップをクリック・ドラッグすると、その場所が画面の真ん中に来る
+  const minimap = $('minimap'), mapCanvas = minimap.querySelector('canvas'), mapCtx = mapCanvas.getContext('2d');
+  const MAP = 150, MAP_DPR = Math.min(2, devicePixelRatio || 1);
+  let boxOver = false;  // 箱が画面からはみ出している (拡大中。全体マップが出る状態)
+  let mapKey = '', mapView = null;  // mapView: マップの座標 → 箱の中心からのずれ { x0, y0, k }
+  // 箱の 8 つの角が、箱の中心からどれだけずれて映るか (今の向きと拡大率で。scale は z を拡大しない)
+  function boxOutline() {
+    const m = new DOMMatrix(ROT()), s = fitScale();
+    const P = parseFloat(getComputedStyle(scene).perspective) || 2200;
+    const pts = [];
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+      const p = m.transformPoint(new DOMPoint(x * boxW / 2, y * boxH / 2, z * boxD / 2));
+      const k = P / (P - (p.z - depthBack()));
+      pts.push([s * p.x * k, s * p.y * k]);
+    }
+    // 外側の輪郭 (凸包)
+    pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const half = (list) => {
+      const h = [];
+      for (const p of list) {
+        while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop();
+        h.push(p);
+      }
+      return h.slice(0, -1);
+    };
+    return [...half(pts), ...half([...pts].reverse())];
+  }
+  function updateMinimap() {
+    const hull = boxOutline(), [cx, cy] = boxCenter();
+    const xs = hull.map((p) => p[0]), ys = hull.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    // 箱がはみ出していなければ出さない
+    const over = cx + x0 < -2 || cx + x1 > innerWidth + 2 || cy + y0 < -2 || cy + y1 > innerHeight + 2;
+    mapBtn.classList.toggle('idle', !over);
+    if (over !== boxOver) {  // 拡大中かどうかが変わったら、虫めがねの印と説明も変える
+      boxOver = over;
+      mag.classList.toggle('zoomed', over);
+      mag.dataset.i18nTitle = over ? 'magTipOut' : 'magTip';
+      mag.title = t(mag.dataset.i18nTitle);
+    }
+    if (!over || depth > 0 || mapOff) {
+      if (!minimap.hidden) minimap.hidden = true;
+      mapKey = '';
+      return;
+    }
+    const key = [cx, cy, ...hull.flat()].map((v) => v.toFixed(1)).join();
+    if (key === mapKey && !minimap.hidden) return;
+    mapKey = key;
+    minimap.hidden = false;
+    // 長い辺が MAP px になる縮尺
+    const k = MAP / Math.max(x1 - x0, y1 - y0);
+    const w = Math.max(24, (x1 - x0) * k), h = Math.max(24, (y1 - y0) * k);
+    const ox = (w - (x1 - x0) * k) / 2, oy = (h - (y1 - y0) * k) / 2;
+    mapView = { x0: x0 - ox / k, y0: y0 - oy / k, k };
+    if (mapCanvas.width !== Math.round(w * MAP_DPR) || mapCanvas.height !== Math.round(h * MAP_DPR)) {
+      mapCanvas.width = Math.round(w * MAP_DPR); mapCanvas.height = Math.round(h * MAP_DPR);
+      mapCanvas.style.width = `${w}px`; mapCanvas.style.height = `${h}px`;
+    }
+    const g = mapCtx, to = (x, y) => [(x - mapView.x0) * k, (y - mapView.y0) * k];
+    g.setTransform(MAP_DPR, 0, 0, MAP_DPR, 0, 0);
+    g.clearRect(0, 0, w, h);
+    // 箱の形
+    g.beginPath();
+    hull.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](...to(x, y)));
+    g.closePath();
+    g.fillStyle = 'rgba(220,224,232,.85)';
+    g.fill();
+    // 今見えている範囲 (画面の四隅を、箱の中心からのずれにする)
+    const [ax, ay] = to(-cx, -cy), [bx, by] = to(innerWidth - cx, innerHeight - cy);
+    g.fillStyle = 'rgba(59,108,246,.18)';
+    g.fillRect(ax, ay, bx - ax, by - ay);
+    g.strokeStyle = '#3b6cf6';
+    g.lineWidth = 2;
+    g.strokeRect(ax, ay, bx - ax, by - ay);
+  }
+  // マップの点 → その場所が画面の真ん中に来るよう視点を動かす
+  function mapGo(e) {
+    if (!mapView) return;
+    const r = mapCanvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) / mapView.k + mapView.x0, y = (e.clientY - r.top) / mapView.k + mapView.y0;
+    target = null;
+    pvx = pvy = 0;  // 全体マップで動かしたら、パンの惰性は止める
+    setPan(-x, -y);
+    apply();
+  }
+  let mapDrag = false;
+  minimap.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    minimap.setPointerCapture(e.pointerId);
+    mapDrag = true;
+    mapGo(e);
+  });
+  minimap.addEventListener('pointermove', (e) => { if (mapDrag) mapGo(e); });
+  const mapEnd = () => { mapDrag = false; };
+  minimap.addEventListener('pointerup', mapEnd);
+  minimap.addEventListener('pointercancel', mapEnd);
+
   $('resetView').addEventListener('click', () => resetAll());
+
+  // ---------- 全体マップのオン・オフ (左上) ----------
+  // オフにすると、拡大しても全体マップを出さない。選んだ状態は覚えておく
+  const mapBtn = $('mapToggle');
+  let mapOff = false;
+  try { mapOff = localStorage.getItem('3d-browser-minimap-off') === '1'; } catch {}
+  const showMapBtn = () => mapBtn.classList.toggle('on', !mapOff);
+  showMapBtn();
+  mapBtn.addEventListener('click', () => {
+    mapOff = !mapOff;
+    try { localStorage.setItem('3d-browser-minimap-off', mapOff ? '1' : ''); } catch {}
+    showMapBtn();
+    mapKey = '';  // すぐに描き直す
+  });
+
+  // ---------- 虫めがね ----------
+  // 左上の虫めがねをドラッグして、箱の上の好きな所に落とすと、そこが画面の真ん中に来るように拡大する (向きはそのまま)。
+  // 縦長の箱 (lPhone など) は幅いっぱいに、ほかは今の 2 倍に (もうそれ以上に拡大していれば、さらに 2 倍)。
+  // 箱の外に落としたら何もしない。押しただけなら使い方を案内する
+  const mag = $('magnifier');
+  let magDrag = null;  // { x, y, moved }
+  function zoomToPoint(x, y) {
+    const s = baseScale(), tall = boxH >= boxW * 3;
+    let z = tall ? Math.max(0.15, Math.min(Math.max(1, 1 / s), innerWidth * 0.9 / (boxW * s))) : zoom * 2;
+    if (z <= zoom * 1.05) z = zoom * 2;
+    z = Math.min(ZOOM_MAX, z);
+    // 落とした点が真ん中に来る位置。ただし箱が画面より大きい向きは、箱の端が画面の中に入らないよう (外の背景が見えないよう) に寄せ、
+    // 画面より小さい向きは真ん中に置く (例: 縦長の箱の上の方に落とすと、幅いっぱいで上の端を見せる表示になる)
+    const [cx, cy] = boxCenter(), k = z / zoom, hull = boxOutline(), m = 16;
+    const fit = (want, lo, hi, size) => {  // want: 箱の中心の画面の位置、lo/hi: 中心から箱の端まで (拡大後)、size: 画面の幅か高さ
+      if (hi - lo > size - 2 * m) return Math.min(m - lo, Math.max(size - m - hi, want));
+      return size / 2 - (lo + hi) / 2;
+    };
+    const xs = hull.map((q) => q[0] * k), ys = hull.map((q) => q[1] * k);
+    const nx = fit(innerWidth / 2 - (x - cx) * k, Math.min(...xs), Math.max(...xs), innerWidth);
+    const ny = fit(innerHeight / 2 - (y - cy) * k, Math.min(...ys), Math.max(...ys), innerHeight);
+    // 拡大したあとの視点のずれを求めてから元に戻し、そこへなめらかに動かす
+    const z0 = zoom, p0 = [...panU];
+    zoom = z;
+    setPan(nx - innerWidth / 2, ny - innerHeight / 2);
+    const pan = [...panU];
+    zoom = z0; panU = p0;
+    stopLatches();
+    vx = vy = vz = pvx = pvy = 0;
+    target = { rx, ry, rz, zoom: z, pan };
+  }
+  // 向きはそのまま、全体が見える大きさにして真ん中に戻す
+  function zoomOutWhole() {
+    const hull = boxOutline(), xs = hull.map((q) => q[0]), ys = hull.map((q) => q[1]);
+    const z = Math.max(0.15, Math.min(1, zoom * Math.min(innerWidth * 0.9 / (Math.max(...xs) - Math.min(...xs)), innerHeight * 0.85 / (Math.max(...ys) - Math.min(...ys)))));
+    stopLatches();
+    vx = vy = vz = pvx = pvy = 0;
+    target = { rx, ry, rz, zoom: z, pan: [0, 0] };
+  }
+  mag.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    mag.setPointerCapture(e.pointerId);
+    magDrag = { x: e.clientX, y: e.clientY, moved: false };
+  });
+  mag.addEventListener('pointermove', (e) => {
+    if (!magDrag) return;
+    const dx = e.clientX - magDrag.x, dy = e.clientY - magDrag.y;
+    if (!magDrag.moved && Math.hypot(dx, dy) < 6) return;
+    magDrag.moved = true;
+    mag.classList.add('dragging');
+    mag.classList.toggle('off-box', !onBox(e.clientX, e.clientY));
+    mag.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+  const magEnd = (e) => {
+    if (!magDrag) return;
+    const { moved } = magDrag;
+    magDrag = null;
+    mag.classList.remove('dragging', 'off-box');
+    mag.style.transform = '';
+    if (!moved) {  // 押しただけ: 拡大中なら全体表示に戻す。そうでなければ使い方を案内する
+      if (e.type === 'pointerup') { if (boxOver) zoomOutWhole(); else resetHint('magHint'); }
+      return;
+    }
+    if (e.type === 'pointerup' && onBox(e.clientX, e.clientY)) zoomToPoint(e.clientX, e.clientY);
+  };
+  mag.addEventListener('pointerup', magEnd);
+  mag.addEventListener('pointercancel', magEnd);
+  if (depth > 0) $('topLeft').hidden = true;  // 入れ子の中では出さない
 
   // 全画面表示。iPhone の Safari は動画以外の全画面に対応していないので、そのときはボタンを出さない
   const root = document.documentElement;
@@ -1898,7 +2623,13 @@
 
   // ---------- 操作パネル ----------
   // スティックを倒した向きに回る。中心から遠いほど速い (強さの 1.5 乗に比例)
-  const pad = $('pad'), stick = pad.querySelector('.stick'), knob = pad.querySelector('.knob');
+  const pad = $('pad'), stick = pad.querySelector('.rot-stick'), knob = stick.querySelector('.knob');
+  const panStick = pad.querySelector('.pan-stick'), panKnob = panStick.querySelector('.knob'), padR = pad.querySelector('.pad-r');
+  const PAN_SPEED = 400;      // パンのレバーの速さ (画面の px/秒)。倒した量によらず一定 (指の位置を気にしなくてよいように)
+  const PAN_DEAD = 0.15;      // これより少ししか倒していなければ動かさない
+  const PAD_DIM = 4;          // 触らずにこの秒数たつと、パネルを薄くする
+  let panVec = null;          // パンのレバーを倒している量 { x, y }。離しているときは null
+  let padIdle = 0;
   const padShow = $('padShow'), padHint = $('padHint');
   const PAD_SPEED = 220;      // いっぱいに倒したときの回転の速さ (度/秒)
   const store = {
@@ -2016,17 +2747,27 @@
   }
 
   let lastPadT = performance.now();
-  const padActive = () => !!stickVec || keyVec.x || keyVec.y || zoomer.dir || roll.dir;
+  const padActive = () => !!stickVec || !!panVec || keyVec.x || keyVec.y || zoomer.dir || roll.dir;
 
+  // 回転のレバーを真横・真上に近い向き (STICK_SNAP 度以内) に倒したら、その軸ぴったりにそろえる (倒した量はそのまま)
+  const STICK_SNAP = 20;
+  function snapAxis(v) {
+    const m = Math.hypot(v.x, v.y);
+    if (m < 0.05) return v;
+    const deg = Math.atan2(Math.abs(v.y), Math.abs(v.x)) * 180 / Math.PI;
+    if (deg < STICK_SNAP) return { x: Math.sign(v.x) * m, y: 0 };
+    if (deg > 90 - STICK_SNAP) return { x: 0, y: Math.sign(v.y) * m };
+    return v;
+  }
   function padTick() {
     const now = performance.now(), dt = Math.min(0.05, (now - lastPadT) / 1000);
     lastPadT = now;
-    const v = stickVec || stickLatch || keyVec;
+    const v = snapAxis(stickVec || stickLatch || keyVec);
     const m = Math.hypot(v.x, v.y);
     if (m > 0.05) {
       const k = PAD_SPEED * Math.pow(Math.min(1, m), 1.5) / m * dt;
       // 背景のドラッグと同じ向き: 右に倒すと右へ、上に倒すと上へ回る
-      ry += v.x * k; rx -= v.y * k;
+      tiltScreen(-v.y * k, v.x * k);  // 画面から見た向きで (逆さまでも右に倒せば右へ)
       target = null;
       // 離したときに少しだけ惰性で回り続けるよう、今の速さを覚えておく (ロック中は惰性を使わない)
       if (stickLatch && !stickVec) vx = vy = 0;
@@ -2034,6 +2775,20 @@
       apply();
     }
     if (stickVec) chargeStick(dt);
+    // パン: 倒した方向へ箱 (見えているもの) が動く (Shift + 矢印とは逆向き)
+    if (panVec) {
+      const pm = Math.hypot(panVec.x, panVec.y);
+      if (pm > PAN_DEAD) {
+        const k = PAN_SPEED / pm * dt, [px, py] = panPx();
+        target = null;
+        setPan(px + panVec.x * k, py + panVec.y * k);
+        apply();
+      }
+    }
+    panStick.classList.toggle('off', minimap.hidden);
+    // 触らずにしばらくたったら薄くする
+    padIdle = padActive() || pad.classList.contains('blink') ? 0 : padIdle + dt;
+    pad.classList.toggle('dim', padIdle > PAD_DIM);
     if (roll.dir) {
       rz += roll.dir * roll.hold(dt) * dt;
       vz = 0;  // 離したらその場で止まる (惰性で行き過ぎないように)
@@ -2129,6 +2884,33 @@
   stick.addEventListener('pointerup', stickUp);
   stick.addEventListener('pointercancel', stickUp);
 
+  // パンのレバー: 倒している間だけ動く (端で止まるので、ロックはしない)
+  function setPanStick(e) {
+    const r = panStick.getBoundingClientRect(), R = r.width / 2;
+    let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R;
+    const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    panVec = { x, y };
+    panKnob.style.transform = `translate(${x * R * 0.62}px, ${y * R * 0.62}px)`;
+  }
+  panStick.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    panStick.setPointerCapture(e.pointerId);
+    panStick.classList.add('active');
+    firstUse();
+    setPanStick(e);
+  });
+  panStick.addEventListener('pointermove', (e) => { if (panVec) setPanStick(e); });
+  const panUp = () => {
+    panVec = null;
+    panStick.classList.remove('active');
+    panKnob.style.transform = '';
+  };
+  panStick.addEventListener('pointerup', panUp);
+  panStick.addEventListener('pointercancel', panUp);
+  // パネルに触ったら、薄くしていたのを戻す
+  pad.addEventListener('pointerdown', () => { padIdle = 0; pad.classList.remove('dim'); }, true);
+
   // 矢印キー (文字を入力しているときは効かない)
   const KEYS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const held = new Set();
@@ -2139,7 +2921,14 @@
   }
   addEventListener('keydown', (e) => {
     if (!KEYS[e.key] || typing(document.activeElement) || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (keyCaptured()) return;  // ゲームなどがキーを使っている
     e.preventDefault();
+    if (e.shiftKey) {  // 見る場所を少しずつ動かす (右を押すと右の方が見える)
+      const [px, py] = panPx(), [kx, ky] = KEYS[e.key];
+      setPan(px - kx * 60, py - ky * 60);
+      apply();
+      return;
+    }
     stopStickLatch();  // 矢印キーで回したら、スティックで回し続けるのをやめる
     held.add(e.key);
     syncKeys();
@@ -2154,17 +2943,19 @@
     if (remember) store.set('3d-browser-pad-hidden', on ? '' : '1');
     layoutPad();
   }
-  // パネルが右下のボタンと重なるなら、ボタンの上に持ち上げる
+  // 右下のまとまりは、右下のボタンの列 (折り返して 2 段になることもある) の上に置く。
+  // 高さが足りれば右下に縦一列 (CSS) なので列ごと、そうでなければ右側のまとまり (パンと拡大縮小) を持ち上げる。
+  // 全体マップはいつも左上 (動かさない)
+  const padColumn = matchMedia('(min-height: 560px)');
   function layoutPad() {
+    padR.style.marginBottom = pad.style.bottom = '';
     if (pad.hidden) return;
-    pad.style.bottom = padHint.style.bottom = '';
-    const a = pad.getBoundingClientRect(), c = document.getElementById('controls').getBoundingClientRect();
-    if (a.right + 8 > c.left && a.bottom > c.top - 8) {
-      // ボタンの列 (折り返して 2 段になることもある) のすぐ上に置く
-      const bottom = innerHeight - c.top + 10;
-      pad.style.bottom = `${bottom}px`;
-      padHint.style.bottom = `${bottom + a.height + 12}px`;
+    const c = $('controls').getBoundingClientRect(), padBottom = parseFloat(getComputedStyle(pad).bottom);
+    if (padColumn.matches) {
+      pad.style.bottom = `${Math.max(padBottom, innerHeight - c.top + 12)}px`;
+      return;
     }
+    padR.style.marginBottom = `${Math.max(0, innerHeight - c.top + 10 - padBottom)}px`;
   }
   addEventListener('resize', layoutPad);
   onLangChange.push(layoutPad);  // 言語でボタンの幅が変わる
@@ -2186,7 +2977,8 @@
       pad.classList.add('untouched', 'blink');  // untouched: まだ触っていない (初回ヒント用)
       setTimeout(() => pad.classList.remove('blink'), 10000);  // 触らなくても 10 秒で光るのをやめる
     }
-    if (saved === null && mouse && !store.get('3d-browser-drag-hinted')) {
+    // ?url= でページを指定して開いたときは、そのページを邪魔しないよう出さない
+    if (saved === null && mouse && !startPage && !store.get('3d-browser-drag-hinted')) {
       store.set('3d-browser-drag-hinted', '1');  // ヒントと揺れは最初の 1 回だけ
       showDragHint();
     }
@@ -2221,8 +3013,14 @@
   // 最初は前面だけブラウザにしておく (最初の斜めの向きを保つため openFace は使わない)。
   // スタートページにプラグインのページも並べるので、プラグインの読み込みが終わってから開く
   const start = () => {
-    makeBrowser(box.querySelector('.front')).addTab(createTab());
+    const tab = createTab();
+    makeBrowser(box.querySelector('.front')).addTab(tab);
     apply();  // ブラウザになった面は陰を弱くする
+    if (PAGES.has(startPage)) {  // 戻るとスタートページ
+      instantStart = true;
+      navigate(tab, `about:${startPage}`);
+      instantStart = false;
+    }
   };
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', start);
   else start();
@@ -2232,9 +3030,10 @@
 </script>
 <!-- 内蔵ページのプラグイン。node build-plugins.mjs で plugins/ の中身から自動で書き換える (手で編集しない) -->
 <!-- plugins:begin -->
-<script src="plugins/draw.js?v=1c90fb03"></script>
-<script src="plugins/horror.js?v=9e427bb3"></script>
-<script src="plugins/kobito.js?v=36518d24"></script>
+<script src="plugins/draw.js?v=59e6ef41"></script>
+<script src="plugins/horror.js?v=a7b61c0d"></script>
+<script src="plugins/kobito.js?v=d8f88d26"></script>
+<script src="plugins/phones.js?v=616e7fd4"></script>
 <!-- plugins:end -->
 </body>
 </html>

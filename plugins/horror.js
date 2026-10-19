@@ -213,7 +213,7 @@
     tab.pane.appendChild(page);
     playHorror(page, api);
   }
-  B3D.registerPage({ id: 'horror', title: 'horror', info: 'infoHorror', menu: true, strings: STR, css: CSS, render: renderHorror });
+  B3D.registerPage({ id: 'horror', icon: '👻', title: 'horror', info: 'infoHorror', menu: true, strings: STR, css: CSS, render: renderHorror });
 
   // 砂嵐。opacity で強さを変える
   function startNoise(canvas, alive) {

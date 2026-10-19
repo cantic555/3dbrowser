@@ -41,7 +41,7 @@
     launchWords: [['ひゃっほー', 'とんでるー', 'わーい！', 'ぎゃー'], ['Wheee!', "I'm flying!", 'Yahoo!', 'Aaah!']],
     linesClear: ['線を全部消す (1 本だけ消すときは線をダブルクリック)', 'Clear all lines (double-click a line to remove just that one)'],
     lineTip: ['ドラッグで移動・ダブルクリックで消す', 'Drag to move, double-click to remove'],
-    infoKobito: ['小人が暮らしている。回すとあたふたする。線を引くとその上を歩く', 'Tiny Folks live here. Rotate and watch them panic. Draw lines for them to walk on'],
+    infoKobito: ['小人が暮らしている (傾ける・線を引く)', 'Tiny Folks live here (tilt, draw lines)'],
   };
 
   // ブラウザの中で小人が暮らしている放置鑑賞ページ。
@@ -531,7 +531,7 @@
       const m = Math.hypot(g.x, g.y), upright = m > 0.35;
       // 背景は真っ白なだけ。透過モードではガラスのように透明にする (小人や線だけが見える)
       ctx.setTransform(R, 0, 0, R, 0, 0);
-      if (api.seeThrough()) {
+      if (api.glassMode()) {
         ctx.clearRect(0, 0, W, H);
       } else {
         ctx.fillStyle = '#fff';
@@ -991,5 +991,5 @@
       draw();
     });
   }
-  B3D.registerPage({ id: 'kobito', title: 'kobito', info: 'infoKobito', menu: true, featured: true, glass: true, strings: STR, css: CSS, render: renderKobito });
+  B3D.registerPage({ id: 'kobito', icon: '🧑‍🤝‍🧑', title: 'kobito', info: 'infoKobito', menu: true, featured: true, glass: true, strings: STR, css: CSS, render: renderKobito });
 })();

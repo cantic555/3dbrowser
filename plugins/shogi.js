@@ -67,6 +67,10 @@
   .sg-panel .sg-bar button.sg-play { height: 34px; padding: 0 10px; font-size: 16px; display: inline-flex; align-items: center; gap: 2px; }
   .sg-play .i { opacity: .4; }
   .sg-play .i.now { opacity: 1; }
+  /* 始める前にパネルを開いたとき、再生ボタンのまわりに光の輪を 3 回広げる (.hint、約 3 秒) */
+  .sg-panel .sg-bar button.sg-play { position: relative; }
+  .sg-panel .sg-play.hint::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; animation: sg-ping 1s ease-out 3; }
+  @keyframes sg-ping { from { box-shadow: 0 0 0 0 rgba(150,225,255,.9); } to { box-shadow: 0 0 0 12px rgba(150,225,255,0); } }
   /* 速さのドロップボックス (再生のバーの右端) */
   .sg-panel select {
     height: 30px; margin-left: 4px; padding: 0 22px 0 10px; border: 1px solid rgba(150,225,255,.45); border-radius: 999px; cursor: pointer;
@@ -1294,10 +1298,24 @@
       if (!b) return;
       begin.hidden = true;
       if ('begin' in b.dataset) { if (paused) { paused = false; setSpeed(); controls(); } }
-      else panelBox.floatOpen?.(true);
+      else { panelBox.floatOpen?.(true); playHint(); }
     });
     page.addEventListener('pointerdown', () => { begin.hidden = true; }, true);  // 盤 (ページの中) を触ったら消す
-    panelBox.addEventListener('floatopen', () => { begin.hidden = true; });  // 右の縁のつまみで操作パネルを出したときも消す
+    panelBox.addEventListener('floatopen', () => { begin.hidden = true; playHint(); });  // 右の縁のつまみで操作パネルを出したときも消す
+    // 始める前 (停止中で 0 手目) にパネルを開いたら、再生ボタンを約 3 秒だけ光らせる (どこから始めるかわかるように)。パネルを触ったらすぐやめる
+    let hintUntil = 0;
+    function playHint() {
+      if (!paused || g.moves) return;
+      hintUntil = performance.now() + 3000;
+      controls();
+      clearTimeout(playHint.timer);
+      playHint.timer = setTimeout(stopHint, 3000);
+    }
+    function stopHint() {
+      hintUntil = 0;
+      panel.querySelector('.sg-play')?.classList.remove('hint');
+    }
+    panel.addEventListener('pointerdown', stopHint, true);
     // 縦長の盤 (9×27・9×81) で開いたときは回転禁止にしておく (うっかり回さないように。盤を切り替えても付け外しはしない。レバーのダブルクリックや 🔒 で解除)
     if (front && board !== 'normal') api.noRotate(true);
     // 勝敗の表示 (取った数の表つき) は箱の手前、画面に見えている盤の真ん中に出す (縦長の盤を小さく見せていても読める大きさ)
@@ -1320,7 +1338,7 @@
         `<span>${t('sgAuto')}</span><span class="sg-auto">${who(0)}${who(1)}</span>` +  // 先手が上
         `<span>${t('sgPlayRow')}</span><span class="sg-bar">` +
         // (印のあとの ︎ は、絵文字 (色付きの四角) でなく字として出す指定)
-        `<button class="sg-play${paused ? '' : ' on'}" data-play title="${t(paused ? 'sgPlay' : 'sgPause')}">` +
+        `<button class="sg-play${paused ? '' : ' on'}${performance.now() < hintUntil ? ' hint' : ''}" data-play title="${t(paused ? 'sgPlay' : 'sgPause')}">` +
         `<span class="i${paused ? ' now' : ''}">▶︎</span><span class="i${paused ? '' : ' now'}">⏸︎</span></button>` +
         `<button class="sg-ic sg-undo" title="${t('sgHoldUndo')}">⏪︎</button>` +
         `<button class="sg-ic sg-step" title="${t('sgHoldStep')}">⏩︎</button>` +

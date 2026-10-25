@@ -3,7 +3,7 @@
 // 盤の描画、オート (再生と速さ)、動いた跡、取った駒が飛ぶ演出、音、戻す / 進む、開発モード。再生のボタンは動画プレイヤー風に 1 行 (▶ ⏪ ⏩ ×1)。最初はどちらの陣営も CPU。
 // ガラスのスマホ (見た目がガラスのもの) の中では、ふつうの 9 × 9 でガラスの盤になる
 (() => {
-  const COLS = 9, TALL_ROWS = 81;  // 長盤の段数 (ガラスのスマホの中ではふつうの 9 段)。対局の段数は盤 (board.length) から決まる
+  const COLS = 9, TALL_ROWS = 81;  // 長盤の段数 (ガラスのスマホの中ではふつうの 9 段、lPhone などの中は画面にちょうど入る段数)。対局の段数は盤 (board.length) から決まる
   const ZONE = 3;  // 敵陣 (成れる段) の深さ
 
   const CSS = `
@@ -22,6 +22,7 @@
     background: rgba(150,225,255,.08); color: #e8f7ff; font: 600 12px/1 system-ui, sans-serif; cursor: pointer;
   }
   .sg-panel button:disabled { opacity: .4; cursor: default; }
+  .sg-panel button[data-board-fixed] { opacity: 1; }  /* スマホの中の今の盤 (押せないが、薄くしない) */
   .sg-panel button.on { background: rgba(150,225,255,.85); color: #0d2233; border-color: transparent; text-shadow: none; }
   /* オン / オフのスイッチ (自動 = CPU / 人、音 あり / なし、残像 あり / なし): オンはつまみが右で明るい水色 (選んだボタンと同じ)、オフはつまみが左で暗い。
      (人の陣営の名前の金色と混ざらないように、スイッチは金色にしない) */
@@ -37,7 +38,7 @@
   /* 自動 の行 (対局のいちばん上): 先手・後手の名前とスイッチを 2 組 (演出の行も同じ並べ方。3 組なので、盤の行の幅で折り返す) */
   .sg-panel .sg-sides { display: flex; gap: 6px 14px; align-items: center; }
   /* 音・残像・取ったコマ数・停止時の移動 のスイッチ: 盤の行の下に 1 行ずつ縦に並べ、字は左・スイッチは右の列でそろえる (見出しはない) */
-  .sg-panel .sg-fx { grid-column: 1 / -1; display: grid; grid-template-columns: auto auto; gap: 8px 12px; justify-content: center; align-items: center; }
+  .sg-panel .sg-fx { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; }  /* 字は左の端 (盤の字とそろえる)、スイッチは右の端 */
   .sg-panel .sg-opt { display: contents; }  /* 字とスイッチをそれぞれの列に */
   .sg-panel .sg-sides .sg-who { margin-right: -10px; }
   /* 自動 の行: 先手・後手を 1 行ずつ、名前・人 / CPU のスイッチ・CPU の強さ (人のときは薄く押せない) の 3 列 */
@@ -111,8 +112,9 @@
 
   // 画面に出る文字。[日本語, English]
   const STR = {
-    shogi: ['将棋', 'Shogi'],
-    infoShogi: ['将棋 (CPU と対戦。長盤は 54 段)', 'Shogi vs CPU (up to 54 ranks)'],
+    shogi: ['ナガ将棋', 'Naga Shogi'],
+    shogiPhone: ['将棋', 'Shogi'],  // スマホのホーム画面の名前
+    infoShogi: ['縦に長い将棋 (CPU と対戦。盤は最大 9×81)', 'Tall shogi vs CPU (board up to 9×81)'],
     sgSente: ['先手', 'Black'],
     sgGote: ['後手', 'White'],
     sgHuman: ['人', 'You'],
@@ -127,6 +129,7 @@
     sgSpeedHint: ['速さ', 'Speed'],
     sgBoard: ['盤', 'Board'],
     sgBoardHint: ['対局を始める前だけ選べます', 'Only before the game starts'],
+    sgBoardFixed: ['スマホの画面に合わせた盤 (変えられません)', "Fitted to the phone's screen (fixed)"],
     sgPause: ['停止', 'Pause'],
     sgPlay: ['再生', 'Play'],
     sgPlayRow: ['再生', 'Play'],
@@ -1228,6 +1231,8 @@
     // ガラスのスマホの中では、ふつうの 9 × 9 でガラスの盤 (盤の外も透明で、透けた本体の上に盤が浮いて見える)
     const glass = api.lookGlass();
     let ROWS = glass ? 9 : BOARDS[board].rows;
+    // lPhone など (ガラスでないスマホ) の中: 画面にちょうど入る段数の盤 (正方形のマス)。段数は画面の大きさがわかってから決める (fitRows)
+    const fit = !front && !glass && !!api.look();
     page.classList.toggle('sg-glass', glass);
     const q = (s) => page.querySelector(s);
     const R = 2;
@@ -1328,7 +1333,9 @@
           `<button data-view="whole">${t('sgWhole')}</button><button data-view="mine">${t('sgMine')}</button><button data-view="theirs">${t('sgTheirs')}</button></span>`) +
         head('sgGroupSetup') +
         (front ? `<span>${t('sgBoard')}</span><span class="sg-seg" title="${t('sgBoardHint')}">` +
-        Object.keys(BOARDS).map((k) => seg(`data-board="${k}"`, `9×${BOARDS[k].rows}`, board === k)).join('') + '</span>' : '') +
+        Object.keys(BOARDS).map((k) => seg(`data-board="${k}"`, `9×${BOARDS[k].rows}`, board === k)).join('') + '</span>' :
+        // スマホの中: 今の盤だけを見せる (選べない)
+        `<span>${t('sgBoard')}</span><span class="sg-seg" title="${t('sgBoardFixed')}"><button class="on" data-board-fixed disabled>9×${ROWS}</button></span>`) +
         // スイッチの行 (盤の下に 1 行ずつ): 音 あり / なし (全部の盤で共通)、残像、取ったコマ数を表示 (取った数の表)、停止時にコマを動かせる (自由な置き直し)
         `<span class="sg-sides sg-fx"><span class="sg-opt" title="${t('sgSoundHint')}"><span>${t('sgSound')}</span><button class="sg-sw${soundOn ? ' on' : ''}" role="switch" aria-checked="${soundOn}" data-sound>` +
         `<span class="t">${t(soundOn ? 'sgOn' : 'sgOff')}</span><span class="k"></span></button></span>` +
@@ -1579,15 +1586,19 @@
     // 盤のスクロール (正面のブラウザで、盤が帯の間に入りきらないとき)。scroll: 上へ隠れている px。
     // 箱の大きさは自由 (右下の角で幅も高さも変えられる)。マスは正方形で幅はブラウザの幅いっぱいなので、箱を低くすると盤がはみ出す
     let scroll = 0;
+    const PHONE_TOP = 64, PHONE_BOTTOM = 40;  // スマホの中で空ける上下 (ステータスバーとホームバー)
+    // lPhone などの中で、画面にちょうど入る段数 (正方形のマスで、幅はいっぱい。9 段より少なくはしない)
+    const fitRows = () => Math.max(9, Math.floor((H - PHONE_TOP - PHONE_BOTTOM - BAR * 2) / ((W - 12) / COLS)));
     function layout() {
       // 上下の余白は、スマホ (lPhone など) の中ならステータスバーとホームバーの分を空ける。BAR: 持ち駒の帯
       const phone = !!api.look();
-      const TOP = phone ? 64 : 4, BOTTOM = phone ? 40 : 4, avail = Math.max(0, H - TOP - BOTTOM - BAR * 2);  // 帯の間の高さ
+      const TOP = phone ? PHONE_TOP : 4, BOTTOM = phone ? PHONE_BOTTOM : 4, avail = Math.max(0, H - TOP - BOTTOM - BAR * 2);  // 帯の間の高さ
       // 正面のブラウザ: マスは正方形で、幅は表示の幅いっぱい (左右 6 の余白)。入りきらない分は帯の間でスクロール。
+      // lPhone などの中 (fit): 正方形のマスで、幅と高さの両方に収まる大きさ (段数を画面に合わせてあるので、ふつうは幅いっぱい)。
       // それ以外 (ガラスのスマホの中など): 幅と高さの両方に収まる大きさ (マスは少し縦長。盤が低いときは横幅もそれに合わせて細くする)
       const fw = (W - 12) / COLS;
-      const ch = Math.max(3, front ? fw : Math.min(Math.min(46, fw) * 1.1, avail / ROWS));
-      const cw = front ? ch : Math.min(46, fw, ch * 1.2);
+      const ch = Math.max(3, front ? fw : fit ? Math.min(fw, avail / ROWS) : Math.min(Math.min(46, fw) * 1.1, avail / ROWS));
+      const cw = front || fit ? ch : Math.min(46, fw, ch * 1.2);
       const boardH = ch * ROWS, over = boardH > avail + 0.5;
       // 盤が帯の間に収まれば、帯ごと縦の真ん中に置く。はみ出すなら帯を上下の端に固定して、間で盤をスクロール
       const top = TOP + (over ? 0 : (avail - boardH) / 2), view0 = top + BAR;
@@ -2132,6 +2143,8 @@
       if (w !== W || h !== H) {
         W = w; H = h;
         canvas.width = W * R; canvas.height = H * R;
+        // lPhone などの中: 画面の大きさがわかったら、まだ指していなければ画面にちょうど入る段数で始め直す
+        if (fit && g.moves === 0 && !past.length && fitRows() !== ROWS) { ROWS = fitRows(); reset(newGame(ROWS)); }
         layout();
       }
       // CPU の番なら、少し待ってから手を決め、動かす駒を見せてから指す。×4 からはすぐ指す。停止中と、人の番は待つ
@@ -2175,7 +2188,7 @@
     '<polygon points="50,4 81,17 92,96 8,96 19,17" fill="#f0d39a" stroke="#5a3a14" stroke-width="5" stroke-linejoin="round"/>' +
     '<text x="50" y="80" text-anchor="middle" font-size="50" font-weight="700" fill="#2a1a08" font-family="\'Yu Mincho\',\'Hiragino Mincho ProN\',serif">歩</text></svg>';
   B3D.registerPage({
-    id: 'shogi', title: 'shogi', icon: ICON, appBg: 'linear-gradient(135deg, #f0d39a, #b8873c)', info: 'infoShogi', menu: true, glass: 'look',
+    id: 'shogi', title: 'shogi', phoneTitle: 'shogiPhone', icon: ICON, appBg: 'linear-gradient(135deg, #f0d39a, #b8873c)', info: 'infoShogi', menu: true, glass: 'look',
     group: { id: 'arcade', icon: '🕹️', title: ['アーケード', 'Arcade'], info: ['ブラウザで遊べるゲーム', 'Games to play in the browser'] },
     strings: STR, css: CSS, render: renderShogi,
   });

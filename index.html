@@ -684,7 +684,7 @@
   const depth = Number(new URLSearchParams(location.search).get('depth')) || 0;
   // リセットの段階 (resetAll) 用。setSize などが起動中にも使うので先に用意する
   let resetFresh = false;  // リセットしてから (見た目を始めてから) 何も触っていない
-  let sizedBy = null;      // 箱の大きさを決めたページ { tab, entry } (setBoxSize)
+  let sizedBy = null;      // 箱の大きさを決めたページ { tab, entry, w, h, fill, spot } (setBoxSize)。角などで大きさを変えても覚えておき、リセットの 1 回目でこの大きさに戻す
   let fillH = null;        // 正面を向けて全体を見せるとき、画面の高さのどれだけまで使うか (setBoxSize の fill。null なら 0.85 で、拡大は 1 倍まで。指定があれば ZOOM_MAX まで拡大してよい。大きさを触ると戻る)
   let instantStart = false;  // ?url= のページを開いている途中 (箱の形が変わるのをアニメーションしない)
   // ?url=about:lphone のように、最初に開く内蔵ページを指定できる (外のサイトや検索語は開かない。
@@ -727,7 +727,6 @@
     alignTip: ['向きを一番近いまっすぐな向き (0・90・180 度) にそろえる (A)', 'Snap to the nearest straight orientation (0/90/180°) (A)'],
     resetAgain: ['もう一度リセットで 3D Browser に戻る', 'Press Reset again to return to 3D Browser'],
     resetAgainHome: ['もう一度リセットでホーム画面へ', 'Press Reset again for the home screen'],
-    resetAgainSize: ['もう一度リセットで標準の大きさに', 'Press Reset again for the standard size'],
     resetAgainTop: ['もう一度リセットでトップ画面へ', 'Press Reset again for the start page'],
     mapTip: ['全体マップ (拡大中に出す。押すとオン・オフ)', 'Overview map (shown while zoomed in; tap to turn on/off)'],
     magTip: ['虫めがね: ドラッグして、拡大したい所に落とす', 'Magnifier: drag and drop where you want to zoom in'],
@@ -1005,7 +1004,8 @@
       groups: () => [...PAGES.values()].filter((d) => d.isGroup && realGroup(d.id))
         .map((g) => ({ id: g.id, title: pageTitle(g), pages: groupMembers(g.id).map((d) => d.id) })),
       // ほかのページの名前・アイコンなど ({ icon, title, appBg }。appBg: スマホのホーム画面のアイコンの背景)。ないページなら null
-      pageInfo: (id) => { const d = PAGES.get(id); return d ? { icon: d.icon, title: pageTitle(d), appBg: d.appBg } : null; },
+      // (スマホのホーム画面の名前は、def に phoneTitle があればそれ)
+      pageInfo: (id) => { const d = PAGES.get(id); return d ? { icon: d.icon, title: d.phoneTitle ? t(d.phoneTitle) : pageTitle(d), appBg: d.appBg } : null; },
       glassMode: () => document.body.classList.contains('see-through') || document.body.classList.contains('look-glass'),
       // このタブが、ガラスの見た目 (setLook の glass) に変えているか (透過モードは含めない)
       lookGlass: () => look?.tab === tab && document.body.classList.contains('look-glass'),
@@ -1033,7 +1033,7 @@
       setBoxSize(w, h, fill) {
         if (look) return;
         setPreset(w, h, 'preset', fill);
-        sizedBy = { tab, entry: tab.history[tab.index] };  // リセットの 1 回目では、この大きさを保つ
+        sizedBy = { tab, entry: tab.history[tab.index], w, h, fill };  // リセットの 1 回目では、この大きさに戻す
       },
       // 箱の回転と大きさの変化が済んだら、要素 el の中の点 (幅・高さに対する割合 fx, fy) へ虫めがねと同じように拡大する
       // (例: 縦長のゲームの下の端をアップで始める)。それまでに触られたら何もしない
@@ -1816,7 +1816,7 @@
   }
   // animate: なめらかに変える (約 0.35 秒)。d (厚み) を省くと今の厚みのまま
   function setSize(w, h, animate = false, d = boxD) {
-    sizedBy = null; fillH = null;  // ページが決めた大きさ (setBoxSize) から変わった
+    fillH = null;  // ページが決めた大きさ (setBoxSize) から変わった (sizedBy はリセットで戻すために残す)
     w = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
     h = Math.round(Math.min(MAX_H, Math.max(MIN_H, h)));
     d = Math.round(Math.max(minDepth, Math.min(d, depthCap(w, h))));
@@ -1958,7 +1958,7 @@
   // リセットは段階的に戻す。触っていたら (resetFresh でなければ)、まず表示だけ戻す:
   // - 見た目 (スマホ) の中でアプリを開いている: 表示位置だけ → ホーム画面 (見た目の最初の表示) → 普通の 3D Browser
   // - 見た目のホーム画面: 最初の表示 (開き直す) → 普通の 3D Browser
-  // - ページが箱の大きさを決めている (setBoxSize。縦長のゲームなど): 大きさを保って表示位置だけ → 標準の大きさ
+  // - ページが箱の大きさを決めている (setBoxSize。縦長のゲームなど): ページが決めた大きさと最初の表示 → トップ画面と標準の大きさ
   let lookSaved = null;
   function resetHint(key) {
     padHint.textContent = t(key);
@@ -2002,15 +2002,20 @@
     const tab = box.querySelector('.face.front')._browser?.active;
     return tab && tab.history[tab.index] ? tab : null;
   }
-  let resetStep = '';  // 直前のリセットでしたこと ('full' = 向きと大きさを戻した)
+  let resetStep = '';  // 直前のリセットでしたこと ('full' = 向きと大きさを戻した、'page' = ページが決めた大きさに戻した)
+  // 正面のブラウザのタブをトップ画面 (スタートページ) にする
+  function showTop(tab) {
+    tab.history.splice(tab.index + 1); tab.history.push(null); tab.index = tab.history.length - 1;
+    render(tab);
+  }
 
   function resetAll() {
     // 向きと大きさを戻したあと何も触らずにもう一度押したら、正面のブラウザをトップ画面 (スタートページ) にする
     const top = !look && resetFresh && resetStep === 'full' && frontPageTab();
+    const step = resetStep;
     resetStep = '';
     if (top) {
-      top.history.splice(top.index + 1); top.history.push(null); top.index = top.history.length - 1;
-      render(top);
+      showTop(top);
       resetFresh = false;
       padHint.classList.remove('show');
       return;
@@ -2019,10 +2024,25 @@
       const entry = look.tab.history[look.tab.index], atHome = entry?.type === 'page' && entry.id === look.page;
       if (!resetFresh && !atHome) return resetViewOnly('resetAgainHome');
       if (!resetFresh || !atHome) return resetLook();
-    } else if (!resetFresh && sizedBy && shown(sizedBy.tab, sizedBy.entry)) {
-      resetViewOnly('resetAgainSize');
-      if (sizedBy.spot) spotWait = { tab: sizedBy.tab, ...sizedBy.spot };  // 最初と同じアップの表示に
-      return;
+    } else if (sizedBy && shown(sizedBy.tab, sizedBy.entry)) {
+      const s = sizedBy;
+      if (resetFresh && step === 'page') {
+        // ページが決めた大きさに戻したあと、何も触らずにもう一度: トップ画面と標準の大きさ (下へ続ける)
+        showTop(s.tab);
+      } else {
+        // 1 回目: ページが決めた大きさ (角などで変えていても) と最初の表示に戻す
+        stopLatches();
+        resetSeeThrough();
+        sizeMode = 'preset';
+        setSize(s.w, s.h, true, D0);
+        fillH = s.fill;
+        fitFront(s.w, s.h);
+        if (s.spot) spotWait = { tab: s.tab, ...s.spot };  // 最初と同じアップの表示に
+        resetFresh = true;
+        resetStep = 'page';
+        resetHint('resetAgainTop');
+        return;
+      }
     }
     if (padHint.dataset.i18n.startsWith('resetAgain')) padHint.classList.remove('show');  // 「もう一度リセットで…」はもう要らない
     const fromLook = !!look;
@@ -3454,7 +3474,7 @@
 <script src="plugins/horror.js?v=a7b61c0d"></script>
 <script src="plugins/kobito.js?v=d8f88d26"></script>
 <script src="plugins/phones.js?v=616e7fd4"></script>
-<script src="plugins/shogi.js?v=6af79731"></script>
+<script src="plugins/shogi.js?v=436574ef"></script>
 <!-- plugins:end -->
 </body>
 </html>

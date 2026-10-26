@@ -78,6 +78,10 @@
     color: #e8f7ff; font: 600 12px/1 system-ui, sans-serif; appearance: none; -webkit-appearance: none;
   }
   .sg-panel select option { background: #0d2233; color: #e8f7ff; }
+  /* 盤のドロップボックス (9×81・9×7): 盤のボタンと同じ高さ。選んでいる盤ならボタンの .on と同じ色 */
+  .sg-panel select[data-board-sel] { height: 26px; margin-left: 0; }
+  .sg-panel select[data-board-sel].on { background-color: rgba(150,225,255,.85); color: #0d2233; border-color: transparent; }
+  .sg-panel select:disabled { opacity: .4; cursor: default; }
   .sg-panel .sg-acts { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: center; }  /* 幅いっぱいに真ん中寄せの行 (最初から、表示のボタン) */
   /* 勝敗の表示 (api.floatOver で箱の手前、画面の上に出す。位置は本体の .float-over) */
   .sg-over {
@@ -1223,9 +1227,12 @@
     tab.pane.appendChild(page);
     const canvas = page.querySelector('canvas'), ctx = canvas.getContext('2d');
     // 正面のブラウザで開いたら、箱の高さを盤に合わせて全体を見せる (スマホの中ならそのまま)
-    // 盤の種類: 中盤 (9 × 27。最初はこれ)、通常 (9 × 9)、長盤 (9 × 81。箱 3718 で盤はちょうど入る)。パネルで選べるのは正面のブラウザのときだけで、対局を始める前 (0 手目) だけ。
+    // 盤の種類: 中盤 (9 × 27。最初はこれ)、通常 (9 × 9)、長盤 (9 × 81。箱 3718 で盤はちょうど入る)、短盤 (9 × 7。両陣の間は 1 段だけ)、9 × 6 (間がなく、歩どうしが向かい合う)。パネルで選べるのは正面のブラウザのときだけで、対局を始める前 (0 手目) だけ。
+    // 9 × 9 と 9 × 27 はボタン、9 × 81・9 × 7・9 × 6 はドロップボックス (DROP_BOARDS) で選ぶ。
     // h: 幅 420 で盤がちょうど入る高さ (段 ×43.56 + 190)。長盤は入りきらない (10,775) ので、箱は [全体] の上限の高さにして、盤は帯の間でスクロール
-    const BOARDS = { normal: { rows: 9, h: 582 }, mid: { rows: 27, h: 1366 }, tall: { rows: TALL_ROWS, h: 3718 } };  // (高さは 段 × 43.56 + 190)
+    const BOARDS = { normal: { rows: 9, h: 582 }, mid: { rows: 27, h: 1366 }, tall: { rows: TALL_ROWS, h: 3718 }, short: { rows: 7, h: 495 }, tiny: { rows: 6, h: 451 } };  // (高さは 段 × 43.56 + 190)
+    const DROP_BOARDS = ['tall', 'short', 'tiny'];
+    let dropLast = 'tall';  // ドロップボックスに出しておく盤 (ほかの盤を選んでいる間は、最後にドロップボックスで選んだもの)
     const front = api.face()?.classList.contains('front') && !api.look();
     let board = 'mid';
     // 箱の大きさ (正面のブラウザだけ)。全体を見せるときは画面の高さの 96% まで使う (上下がぎりぎりまで大きく)。
@@ -1317,7 +1324,7 @@
     }
     panel.addEventListener('pointerdown', stopHint, true);
     // 縦長の盤 (9×27・9×81) で開いたときは回転禁止にしておく (うっかり回さないように。盤を切り替えても付け外しはしない。レバーのダブルクリックや 🔒 で解除)
-    if (front && board !== 'normal') api.noRotate(true);
+    if (front && BOARDS[board].rows > 9) api.noRotate(true);
     // 勝敗の表示 (取った数の表つき) は箱の手前、画面に見えている盤の真ん中に出す (縦長の盤を小さく見せていても読める大きさ)
     const over = api.floatOver(q('.sg-over'), canvas);
     function controls() {
@@ -1351,7 +1358,11 @@
           `<button data-view="whole">${t('sgWhole')}</button><button data-view="mine">${t('sgMine')}</button><button data-view="theirs">${t('sgTheirs')}</button></span>`) +
         head('sgGroupSetup') +
         (front ? `<span>${t('sgBoard')}</span><span class="sg-seg" title="${t('sgBoardHint')}">` +
-        Object.keys(BOARDS).map((k) => seg(`data-board="${k}"`, `9×${BOARDS[k].rows}`, board === k)).join('') + '</span>' :
+        Object.keys(BOARDS).filter((k) => !DROP_BOARDS.includes(k)).map((k) => seg(`data-board="${k}"`, `9×${BOARDS[k].rows}`, board === k)).join('') +
+        // ドロップボックス: ほかの盤を選んでいる間は、隠した空の選択肢 (字は dropLast の盤) を選んでおく (同じ盤を選び直しても change が来るように)
+        `<select data-board-sel${DROP_BOARDS.includes(board) ? ' class="on"' : ''}>` +
+        `<option value="" hidden${DROP_BOARDS.includes(board) ? '' : ' selected'}>9×${BOARDS[dropLast].rows}</option>` +
+        DROP_BOARDS.map((k) => `<option value="${k}"${board === k ? ' selected' : ''}>9×${BOARDS[k].rows}</option>`).join('') + '</select></span>' :
         // スマホの中: 今の盤だけを見せる (選べない)
         `<span>${t('sgBoard')}</span><span class="sg-seg" title="${t('sgBoardFixed')}"><button class="on" data-board-fixed disabled>9×${ROWS}</button></span>`) +
         // スイッチの行 (盤の下に 1 行ずつ): 音 あり / なし (全部の盤で共通)、残像、取ったコマ数を表示 (取った数の表)、停止時にコマを動かせる (自由な置き直し)
@@ -1374,10 +1385,12 @@
       if (step) step.disabled = g.winner !== null;
       const undo = panel.querySelector('.sg-undo');
       if (undo) undo.disabled = !past.length;
-      for (const b of panel.querySelectorAll('[data-board]')) b.disabled = g.moves > 0;
+      for (const b of panel.querySelectorAll('[data-board], [data-board-sel]')) b.disabled = g.moves > 0;
     }
     // 速さ: ドロップボックスで選んだらすぐ (止まっていれば次の再生から)
     panel.addEventListener('change', (e) => {
+      const bs = e.target.closest('select[data-board-sel]');  // 盤 (9×81・9×7)
+      if (bs) { if (bs.value && board !== bs.value && !g.moves) { dropLast = bs.value; setBoard(bs.value); } return; }
       const lv = e.target.closest('select[data-level]');
       if (lv) { level[+lv.dataset.level] = lv.value; saveLevel(); return; }  // CPU の強さ (次の CPU の手から効く)
       const sel = e.target.closest('select[data-rate]');
